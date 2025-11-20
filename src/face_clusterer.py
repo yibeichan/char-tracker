@@ -6,6 +6,7 @@ import networkx as nx
 from tqdm import tqdm
 from scipy.spatial.distance import cosine, cdist
 from facenet_pytorch import InceptionResnetV1
+from torch.utils.data import Dataset, DataLoader
 
 class FaceEmbedder:
     def __init__(self, model=None, device=None):
@@ -60,6 +61,153 @@ class FaceEmbedder:
                     pbar.update(1)
 
         return face_embeddings
+
+    def get_face_embeddings_batch(self, selected_frames, image_dir, batch_size=32, num_workers=4):
+        """
+        Get embeddings for each cropped face image using batch processing.
+
+        This method is optimized for GPU utilization by processing multiple images
+        at once instead of one-by-one.
+
+        Args:
+            selected_frames: Dictionary of selected frames per scene
+            image_dir: Directory containing face images
+            batch_size: Number of images to process in each batch (default: 32)
+            num_workers: Number of worker threads for data loading (default: 4)
+
+        Returns:
+            List of face embeddings with metadata
+        """
+        # Create dataset and dataloader
+        dataset = FaceImageDataset(selected_frames, image_dir, self.preprocess_face, self.device)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=True if self.device.type == 'cuda' else False
+        )
+
+        # Process batches
+        all_embeddings = []
+
+        with torch.no_grad():
+            for batch_tensors, batch_metadata in tqdm(dataloader, desc="Extracting Face Embeddings (Batched)", unit="batch"):
+                # Move batch to device
+                batch_tensors = batch_tensors.to(self.device)
+
+                # Get embeddings for entire batch
+                batch_embeddings = self.model(batch_tensors).cpu().numpy()
+
+                # Store embeddings with metadata
+                for i, embedding in enumerate(batch_embeddings):
+                    metadata = batch_metadata[i]
+                    all_embeddings.append({
+                        'embedding': embedding,
+                        'metadata': metadata
+                    })
+
+        # Reconstruct the hierarchical structure
+        return self._reconstruct_embedding_structure(all_embeddings, selected_frames)
+
+    def _reconstruct_embedding_structure(self, flat_embeddings, selected_frames):
+        """
+        Reconstruct the hierarchical structure of embeddings from flat list.
+
+        Args:
+            flat_embeddings: Flat list of embeddings with metadata
+            selected_frames: Original selected_frames dictionary for structure
+
+        Returns:
+            Embeddings in the same structure as get_face_embeddings()
+        """
+        face_embeddings = []
+        embedding_idx = 0
+
+        for scene_id, faces in selected_frames.items():
+            for face_data in faces:
+                embeddings = []
+                for frame_info in face_data['top_frames']:
+                    emb_data = flat_embeddings[embedding_idx]
+                    embeddings.append({
+                        "frame_idx": frame_info['frame_idx'],
+                        "embedding": emb_data['embedding'],
+                        "image_path": frame_info['image_path']
+                    })
+                    embedding_idx += 1
+
+                face_embeddings.append({
+                    "scene_id": scene_id,
+                    "unique_face_id": face_data['unique_face_id'],
+                    "global_face_id": face_data['global_face_id'],
+                    "embeddings": embeddings
+                })
+
+        return face_embeddings
+
+class FaceImageDataset(Dataset):
+    """
+    PyTorch Dataset for loading face images in batches.
+
+    This dataset flattens the hierarchical structure of faces/frames into a single
+    list for efficient batch processing.
+    """
+    def __init__(self, selected_frames, image_dir, preprocess_fn, device):
+        """
+        Args:
+            selected_frames: Dictionary of selected frames per scene
+            image_dir: Directory containing face images
+            preprocess_fn: Function to preprocess face images
+            device: Device for tensor operations
+        """
+        self.image_dir = image_dir
+        self.preprocess_fn = preprocess_fn
+        self.device = device
+
+        # Flatten all image paths with metadata
+        self.image_items = []
+        for scene_id, faces in selected_frames.items():
+            for face_data in faces:
+                for frame_info in face_data['top_frames']:
+                    self.image_items.append({
+                        'image_path': os.path.join(image_dir, frame_info['image_path']),
+                        'scene_id': scene_id,
+                        'unique_face_id': face_data['unique_face_id'],
+                        'frame_idx': frame_info['frame_idx']
+                    })
+
+    def __len__(self):
+        return len(self.image_items)
+
+    def __getitem__(self, idx):
+        """
+        Load and preprocess a single image.
+
+        Returns:
+            tuple: (preprocessed_tensor, metadata_dict)
+        """
+        item = self.image_items[idx]
+
+        # Load image
+        image = cv2.imread(item['image_path'])
+        if image is None:
+            raise ValueError(f"Error loading image: {item['image_path']}")
+
+        # Preprocess (resize, normalize)
+        face_tensor = self.preprocess_fn(image)
+
+        # Remove batch dimension added by preprocess_fn
+        face_tensor = face_tensor.squeeze(0)
+
+        # Return tensor and metadata
+        metadata = {
+            'scene_id': item['scene_id'],
+            'unique_face_id': item['unique_face_id'],
+            'frame_idx': item['frame_idx'],
+            'image_path': item['image_path']
+        }
+
+        return face_tensor, metadata
 
 class FaceClusterer:
     def __init__(self, similarity_threshold: float = 0.6, max_iterations: int = 100):

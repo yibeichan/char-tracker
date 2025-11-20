@@ -80,14 +80,22 @@ def save_json(data, output_file):
         sys.exit(1)
 
 
-def main(video_name, face_selection_file, output_dir):
+def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32):
     face_embedder = FaceEmbedder()
     face_clusterer = FaceClusterer(similarity_threshold=0.6, max_iterations=100)
 
     selected_faces = read_json(face_selection_file)
     image_dir = os.path.dirname(face_selection_file)
 
-    face_embeddings = face_embedder.get_face_embeddings(selected_faces, image_dir)
+    # Use batch processing for better GPU utilization (2-4x faster)
+    if use_batch:
+        print(f"Using batch processing with batch_size={batch_size}")
+        face_embeddings = face_embedder.get_face_embeddings_batch(
+            selected_faces, image_dir, batch_size=batch_size, num_workers=4
+        )
+    else:
+        print("Using sequential processing (slower)")
+        face_embeddings = face_embedder.get_face_embeddings(selected_faces, image_dir)
 
     consolidated_clusters = face_clusterer.cluster_faces(face_embeddings)
 
@@ -99,9 +107,13 @@ def main(video_name, face_selection_file, output_dir):
     print("Processing complete!")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Face Detection in Video')
-    parser.add_argument('video_name', type=str, help='Name of the input video file without extension.')  # Clarified the argument description
-    
+    parser = argparse.ArgumentParser(description='Face Clustering with Embeddings')
+    parser.add_argument('video_name', type=str, help='Name of the input video file without extension.')
+    parser.add_argument('--no-batch', action='store_true',
+                       help='Disable batch processing (use sequential processing)')
+    parser.add_argument('--batch-size', type=int, default=32,
+                       help='Batch size for embedding extraction (default: 32)')
+
     args = parser.parse_args()
     video_name = args.video_name
 
@@ -112,5 +124,7 @@ if __name__ == "__main__":
     output_dir = os.path.join(scratch_dir, "output", "face_clustering")
     os.makedirs(output_dir, exist_ok=True)
 
-    main(video_name, face_selection_file, output_dir)
+    main(video_name, face_selection_file, output_dir,
+         use_batch=not args.no_batch,
+         batch_size=args.batch_size)
     

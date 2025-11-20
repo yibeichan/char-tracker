@@ -1,10 +1,10 @@
 #!/bin/bash
 
-#SBATCH --job-name=pipeline_01_04b
+#SBATCH --job-name=pipeline_03_04b
 #SBATCH --output=/orcd/home/002/yibei/face-track/logs/%x_%j.out
 #SBATCH --error=/orcd/home/002/yibei/face-track/logs/%x_%j.err
 #SBATCH --partition=ou_bcs_low
-#SBATCH --time=01:30:00
+#SBATCH --time=01:00:00
 #SBATCH --array=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
@@ -12,8 +12,9 @@
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=yibei@mit.edu
 
-# Full pipeline script (01-04b) for batch processing with SLURM
-# This script runs all 5 steps sequentially for each video in the array
+# Partial pipeline script (03-04b) for batch processing with SLURM
+# This script runs steps 03-04b sequentially for each video in the array
+# Assumes steps 01-02 have already completed
 
 # Source micromamba (adjust if using conda instead)
 # For micromamba:
@@ -56,9 +57,9 @@ echo ""
 # Change to scripts directory
 cd "$SCRIPTS_DIR" || exit 1
 
-# Run the full pipeline script
-echo "Starting pipeline execution..."
-./run_pipeline_01_to_04b.sh "$TASK_ID" --mode "$MODE"
+# Run the partial pipeline script (03-04b)
+echo "Starting partial pipeline execution (steps 03-04b)..."
+./run_pipeline_03_to_04b.sh "$TASK_ID" --mode "$MODE"
 
 # Capture exit code
 EXIT_CODE=$?
@@ -66,12 +67,12 @@ EXIT_CODE=$?
 if [ $EXIT_CODE -eq 0 ]; then
     echo ""
     echo "=========================================="
-    echo "SUCCESS: Pipeline completed for $TASK_ID"
+    echo "SUCCESS: Partial pipeline (03-04b) completed for $TASK_ID"
     echo "=========================================="
 else
     echo ""
     echo "=========================================="
-    echo "FAILED: Pipeline failed for $TASK_ID with exit code $EXIT_CODE"
+    echo "FAILED: Partial pipeline (03-04b) failed for $TASK_ID with exit code $EXIT_CODE"
     echo "=========================================="
     exit $EXIT_CODE
 fi
