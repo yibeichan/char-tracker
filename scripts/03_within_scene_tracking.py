@@ -35,9 +35,14 @@ def main(video_name, scratch_dir, output_dir, tracker_kwargs):
         fps = cap.get(cv2.CAP_PROP_FPS)
         cap.release()
 
+        # Guard against invalid FPS (0, NaN, or negative) - assume 30fps
+        if not (fps > 0):
+            fps = 30.0
+            print(f"Warning: Could not detect valid FPS, assuming fps=30")
+
         # Use 0.5 seconds as default tolerance for detection gaps
         tracker_kwargs['max_gap'] = int(0.5 * fps)
-        print(f"Auto-detected FPS: {fps:.2f}, setting max_gap={tracker_kwargs['max_gap']} frames (0.5 seconds)")
+        print(f"Using FPS: {fps:.2f}, setting max_gap={tracker_kwargs['max_gap']} frames (0.5 seconds)")
 
     # Initialize the tracker and selector
     face_tracker = FaceTracker(**tracker_kwargs)
