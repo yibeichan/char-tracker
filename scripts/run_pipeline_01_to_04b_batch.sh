@@ -3,15 +3,14 @@
 #SBATCH --job-name=pipeline_01_04b
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --partition=normal
-#SBATCH --exclude=node[030-070]
-#SBATCH --time=08:00:00
-#SBATCH --array=1-292
+#SBATCH --partition=ou_bcs_low
+#SBATCH --time=01:30:00
+#SBATCH --array=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --mem=16G
 #SBATCH --mail-type=FAIL,END
-#SBATCH --mail-user=your-email@example.com  # UPDATE THIS with your email
+#SBATCH --mail-user=yibei@mit.edu
 
 # Full pipeline script (01-04b) for batch processing with SLURM
 # This script runs all 5 steps sequentially for each video in the array
@@ -19,11 +18,11 @@
 # Source micromamba (adjust if using conda instead)
 # For micromamba:
 eval "$(micromamba shell hook --shell bash)"
-micromamba activate face-track
+micromamba activate friends_char_track
 
 # For conda, use instead:
 # source $HOME/miniconda3/etc/profile.d/conda.sh
-# conda activate face-track
+# conda activate friends_char_track
 
 # Derive paths from script location
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

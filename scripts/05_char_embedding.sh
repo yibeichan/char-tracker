@@ -15,7 +15,7 @@
 
 source $HOME/miniconda3/etc/profile.d/conda.sh
 # Activate your Conda environment
-conda activate face-track
+conda activate friends_char_track
 
 seasons=("s01" "s02" "s03" "s04" "s05" "s06")
 

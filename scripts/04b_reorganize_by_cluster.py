@@ -3,6 +3,7 @@ import sys
 import argparse
 import json
 import shutil
+import zipfile
 from collections import defaultdict
 from dotenv import load_dotenv
 
@@ -119,13 +120,56 @@ def reorganize_by_cluster(video_name, matched_faces_file, source_dir, output_bas
     print(f"\nReorganization complete! Processed {processed}/{total_files} files")
     print(f"Output directory: {episode_output_dir}")
 
-def main(video_name, scratch_dir, mode):
+    return episode_output_dir
+
+def create_zip_file(episode_output_dir, video_name):
+    """
+    Create a zip file containing all cluster directories.
+
+    Args:
+        episode_output_dir: Directory containing the cluster subdirectories
+        video_name: Episode ID (e.g., 'friends_s01e01a')
+
+    Returns:
+        Path to the created zip file
+    """
+    # Create zip file in the same parent directory as episode_output_dir
+    zip_path = os.path.join(os.path.dirname(episode_output_dir), f"{video_name}.zip")
+
+    print(f"\nCreating zip file: {zip_path}")
+
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        # Walk through the episode directory
+        for root, dirs, files in os.walk(episode_output_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                # Calculate the archive name (relative path from episode_output_dir)
+                # This puts cluster folders directly at the zip root
+                arcname = os.path.relpath(file_path, episode_output_dir)
+                zipf.write(file_path, arcname)
+
+        # Get list of cluster directories for summary
+        cluster_dirs = [d for d in os.listdir(episode_output_dir)
+                       if os.path.isdir(os.path.join(episode_output_dir, d))]
+
+    zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # Size in MB
+    print(f"Zip file created successfully!")
+    print(f"  - Path: {zip_path}")
+    print(f"  - Size: {zip_size:.2f} MB")
+    print(f"  - Contains {len(cluster_dirs)} cluster directories")
+
+    return zip_path
+
+def main(video_name, scratch_dir, mode, create_zip):
     matched_faces_file = os.path.join(scratch_dir, "output", "face_clustering",
                                       f"{video_name}_matched_faces_with_clusters.json")
     source_dir = os.path.join(scratch_dir, "output", "face_tracking", video_name)
     output_base_dir = os.path.join(scratch_dir, "output", "face_tracking_by_cluster")
 
-    reorganize_by_cluster(video_name, matched_faces_file, source_dir, output_base_dir, mode)
+    episode_output_dir = reorganize_by_cluster(video_name, matched_faces_file, source_dir, output_base_dir, mode)
+
+    if create_zip:
+        create_zip_file(episode_output_dir, video_name)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Reorganize face images by cluster ID')
@@ -134,6 +178,8 @@ if __name__ == "__main__":
     parser.add_argument('--mode', type=str, default='copy',
                        choices=['copy', 'move', 'symlink'],
                        help='How to organize files: copy (default), move, or symlink')
+    parser.add_argument('--create-zip', action='store_true',
+                       help='Create a zip file of the reorganized cluster structure')
 
     args = parser.parse_args()
     video_name = args.video_name
@@ -145,4 +191,4 @@ if __name__ == "__main__":
         print("Error: SCRATCH_DIR not found in environment")
         sys.exit(1)
 
-    main(video_name, scratch_dir, args.mode)
+    main(video_name, scratch_dir, args.mode, args.create_zip)

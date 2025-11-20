@@ -8,13 +8,15 @@ from tqdm import tqdm
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class FaceTracker:
-    def __init__(self, iou_threshold=0.5, max_gap=2, box_expansion=0.1, use_median_box=True):
+    def __init__(self, iou_threshold=0.5, max_gap=30, box_expansion=0.1, use_median_box=True):
         """
         Simple, effective face tracker for within-scene tracking.
 
         Args:
             iou_threshold (float): Minimum IoU required to associate a detection with an existing track.
             max_gap (int): Maximum number of missing frames before a track is considered dead.
+                          Default 30 frames (~1 second at 30fps). Should be set based on video FPS
+                          to tolerate detection failures from head turns, occlusions, and detector misses.
             box_expansion (float): Ratio to expand bounding boxes before IoU calculation (tolerates small movements).
             use_median_box (bool): Use median of recent detections for matching (more stable than last detection).
         """
@@ -183,8 +185,11 @@ class FrameSelector:
         return np.mean(image)
 
     @staticmethod
-    def calculate_blurriness(image):
-        """Calculate the blurriness using Laplacian variance."""
+    def calculate_sharpness(image):
+        """Calculate the sharpness using Laplacian variance.
+
+        Higher variance = more edges detected = sharper image.
+        """
         laplacian = cv2.Laplacian(image, cv2.CV_32F)
         return np.var(laplacian)
 
@@ -241,16 +246,17 @@ class FrameSelector:
                         gray_face = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
                         face_size = width_cropped * height_cropped
                         brightness = self.calculate_brightness(gray_face)
-                        blurriness = self.calculate_blurriness(gray_face)
+                        sharpness = self.calculate_sharpness(gray_face)
 
                         # Normalize the components
                         normalized_face_size = face_size / (width * height)
                         normalized_brightness = brightness / 255.0
-                        # Higher blurriness = worse quality, so invert it
-                        normalized_blurriness = 1.0 / (1.0 + blurriness)
+                        # Normalize sharpness: higher Laplacian variance = sharper = better
+                        # Use scaling factor to bring into [0, 1] range (typical values: 10-500)
+                        normalized_sharpness = sharpness / (sharpness + 100.0)
 
                         # Combine features into a score (higher is better)
-                        score = confidence + 0.5 * normalized_face_size + 0.3 * normalized_brightness + 0.2 * normalized_blurriness
+                        score = confidence + 0.5 * normalized_face_size + 0.3 * normalized_brightness + 0.2 * normalized_sharpness
 
                         # Save the image and get its relative path
                         relative_path = self.save_cropped_face(face_image, f"{scene_id}_face_{face_id}", frame_idx)

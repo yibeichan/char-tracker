@@ -15,7 +15,7 @@
 
 source $HOME/miniconda3/etc/profile.d/conda.sh
 # Activate your Conda environment
-conda activate face-track
+conda activate friends_char_track
 
 TASK_FILE="/om2/user/yibei/face-track/data/episode_id.txt"
 
