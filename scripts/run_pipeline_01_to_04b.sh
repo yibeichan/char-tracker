@@ -217,7 +217,7 @@ log_info "=========================================="
 log_info "STEP 04b: Reorganize by Cluster"
 log_info "=========================================="
 
-python 04b_reorganize_by_cluster.py "$VIDEO_NAME" --mode "$MODE"
+python 04b_reorganize_by_cluster.py "$VIDEO_NAME" --mode "$MODE" --create-zip
 
 # Validate output
 check_dir_exists "$REORGANIZE_DIR" "Reorganized cluster directory" || exit 1
@@ -244,5 +244,6 @@ log_info "  - Face detection:     $FACE_DETECTION_OUTPUT"
 log_info "  - Face tracking:      $TRACKING_DIR"
 log_info "  - Face clustering:    $CLUSTERING_OUTPUT"
 log_info "  - Reorganized faces:  $REORGANIZE_DIR"
+log_info "  - Cluster zip file:   ${SCRATCH_DIR}/output/face_tracking_by_cluster/${VIDEO_NAME}.zip"
 echo ""
 log_success "All steps completed successfully for video: $VIDEO_NAME"
