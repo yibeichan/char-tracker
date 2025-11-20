@@ -66,12 +66,15 @@ check_dir_exists() {
 
 # Parse arguments
 if [ $# -lt 1 ]; then
-    log_error "Usage: $0 <video_name> [--mode copy|move|symlink]"
+    log_error "Usage: $0 <video_name> [--mode copy|move|symlink] [--no-sequential] [--no-batch] [--batch-size N]"
     exit 1
 fi
 
 VIDEO_NAME=$1
 MODE="copy"  # Default mode for 04b
+NO_SEQUENTIAL=""  # Empty = use sequential (optimized)
+NO_BATCH=""  # Empty = use batch processing (optimized)
+BATCH_SIZE="32"  # Default batch size
 
 # Parse optional arguments
 shift
@@ -89,6 +92,22 @@ while [ $# -gt 0 ]; do
                 log_error "Invalid mode: '$2'. Must be one of 'copy', 'move', or 'symlink'."
                 exit 1
             fi
+            ;;
+        --no-sequential)
+            NO_SEQUENTIAL="--no-sequential"
+            shift
+            ;;
+        --no-batch)
+            NO_BATCH="--no-batch"
+            shift
+            ;;
+        --batch-size)
+            if [ $# -lt 2 ]; then
+                log_error "Missing argument for --batch-size."
+                exit 1
+            fi
+            BATCH_SIZE="$2"
+            shift 2
             ;;
         *)
             log_error "Unknown argument: $1"
@@ -120,6 +139,16 @@ fi
 log_info "SCRATCH_DIR: $SCRATCH_DIR"
 log_info "Video name: $VIDEO_NAME"
 log_info "Mode for 04b: $MODE"
+if [ -z "$NO_SEQUENTIAL" ]; then
+    log_info "Step 03: Sequential frame reading ENABLED (5-10x faster)"
+else
+    log_warning "Step 03: Sequential frame reading DISABLED (using legacy mode)"
+fi
+if [ -z "$NO_BATCH" ]; then
+    log_info "Step 04: Batch processing ENABLED (batch_size=$BATCH_SIZE, 2-4x faster)"
+else
+    log_warning "Step 04: Batch processing DISABLED (using sequential mode)"
+fi
 
 # Define paths
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -180,7 +209,7 @@ log_info "=========================================="
 log_info "STEP 03: Within-Scene Tracking"
 log_info "=========================================="
 
-python 03_within_scene_tracking.py "$VIDEO_NAME"
+python 03_within_scene_tracking.py "$VIDEO_NAME" $NO_SEQUENTIAL
 
 # Validate outputs
 check_dir_exists "$TRACKING_DIR" "Tracking directory" || exit 1
@@ -204,7 +233,7 @@ log_info "=========================================="
 log_info "STEP 04: Face Clustering"
 log_info "=========================================="
 
-python 04_face_clustering.py "$VIDEO_NAME"
+python 04_face_clustering.py "$VIDEO_NAME" $NO_BATCH --batch-size "$BATCH_SIZE"
 
 # Validate output
 check_file_exists "$CLUSTERING_OUTPUT" "Face clustering output" || exit 1
