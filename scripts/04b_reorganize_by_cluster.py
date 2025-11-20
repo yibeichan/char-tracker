@@ -138,21 +138,31 @@ def create_zip_file(episode_output_dir, video_name):
 
     print(f"\nCreating zip file: {zip_path}")
 
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # Walk through the episode directory
-        for root, dirs, files in os.walk(episode_output_dir):
-            for file in files:
-                file_path = os.path.join(root, file)
-                # Calculate the archive name (relative path from episode_output_dir)
-                # This puts cluster folders directly at the zip root
-                arcname = os.path.relpath(file_path, episode_output_dir)
-                zipf.write(file_path, arcname)
+    cluster_dirs = []
 
-        # Get list of cluster directories for summary
-        cluster_dirs = [d for d in os.listdir(episode_output_dir)
-                       if os.path.isdir(os.path.join(episode_output_dir, d))]
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Walk through the episode directory
+            for root, dirs, files in os.walk(episode_output_dir):
+                # Capture cluster directories from first iteration (at episode_output_dir level)
+                if root == episode_output_dir and not cluster_dirs:
+                    cluster_dirs = dirs.copy()
 
-    zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # Size in MB
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Calculate the archive name (relative path from episode_output_dir)
+                    # This puts cluster folders directly at the zip root
+                    arcname = os.path.relpath(file_path, episode_output_dir)
+                    zipf.write(file_path, arcname)
+    except Exception as e:
+        # Clean up partial zip file on error
+        if os.path.exists(zip_path):
+            print(f"Error during zip creation: {e}")
+            print(f"Removing partial zip file: {zip_path}")
+            os.remove(zip_path)
+        raise
+
+    zip_size = os.path.getsize(zip_path) / (1024**2)  # Size in MB
     print(f"Zip file created successfully!")
     print(f"  - Path: {zip_path}")
     print(f"  - Size: {zip_size:.2f} MB")
