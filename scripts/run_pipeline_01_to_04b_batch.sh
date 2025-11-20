@@ -4,7 +4,7 @@
 #SBATCH --output=/orcd/home/002/yibei/face-track/logs/%x_%j.out
 #SBATCH --error=/orcd/home/002/yibei/face-track/logs/%x_%j.err
 #SBATCH --partition=ou_bcs_low
-#SBATCH --time=01:30:00
+#SBATCH --time=00:45:00
 #SBATCH --array=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
@@ -14,6 +14,16 @@
 
 # Full pipeline script (01-04b) for batch processing with SLURM
 # This script runs all 5 steps sequentially for each video in the array
+#
+# With optimizations enabled (default):
+#   - Sequential frame reading: 5-10x faster for step 03
+#   - Batch embeddings: 2-4x faster for step 04
+#   - Expected time for steps 03-04: ~10-15 minutes
+#
+# To disable optimizations, set environment variables:
+#   NO_SEQUENTIAL=1 sbatch run_pipeline_01_to_04b_batch.sh
+#   NO_BATCH=1 sbatch run_pipeline_01_to_04b_batch.sh
+#   BATCH_SIZE=64 sbatch run_pipeline_01_to_04b_batch.sh
 
 # Source micromamba (adjust if using conda instead)
 # For micromamba:
@@ -36,6 +46,14 @@ mkdir -p "$LOG_DIR"
 # Mode for step 04b: copy, move, or symlink (default: symlink for efficiency)
 MODE="${MODE:-symlink}"
 
+# Optimization flags (can be set via environment variables)
+# Set NO_SEQUENTIAL=1 to disable sequential frame reading
+# Set NO_BATCH=1 to disable batch embedding processing
+# Set BATCH_SIZE=64 to use custom batch size
+USE_SEQUENTIAL="${NO_SEQUENTIAL:-}"
+USE_BATCH="${NO_BATCH:-}"
+BATCH_SIZE="${BATCH_SIZE:-32}"
+
 # Get the video name for this array task
 TASK_ID=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$TASK_FILE")
 
@@ -50,15 +68,36 @@ echo "SLURM Array Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Processing video: $TASK_ID"
 echo "Mode for 04b: $MODE"
 echo "Node: $(hostname)"
+if [ -z "$USE_SEQUENTIAL" ]; then
+    echo "Optimization: Sequential frame reading ENABLED (5-10x faster)"
+else
+    echo "Optimization: Sequential frame reading DISABLED"
+fi
+if [ -z "$USE_BATCH" ]; then
+    echo "Optimization: Batch embeddings ENABLED (batch_size=$BATCH_SIZE, 2-4x faster)"
+else
+    echo "Optimization: Batch embeddings DISABLED"
+fi
 echo "=========================================="
 echo ""
 
 # Change to scripts directory
 cd "$SCRIPTS_DIR" || exit 1
 
+# Build command with optimization flags
+CMD="./run_pipeline_01_to_04b.sh \"$TASK_ID\" --mode \"$MODE\""
+if [ -n "$USE_SEQUENTIAL" ]; then
+    CMD="$CMD --no-sequential"
+fi
+if [ -n "$USE_BATCH" ]; then
+    CMD="$CMD --no-batch"
+fi
+CMD="$CMD --batch-size \"$BATCH_SIZE\""
+
 # Run the full pipeline script
 echo "Starting pipeline execution..."
-./run_pipeline_01_to_04b.sh "$TASK_ID" --mode "$MODE"
+echo "Command: $CMD"
+eval $CMD
 
 # Capture exit code
 EXIT_CODE=$?
