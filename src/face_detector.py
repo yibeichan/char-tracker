@@ -125,7 +125,7 @@ class FaceDetector:
         """Check if bounding box meets size and aspect ratio requirements."""
         width = box[2] - box[0]
         height = box[3] - box[1]
-        aspect_ratio = max(width / height, height / width) if height > 0 else float('inf')
+        aspect_ratio = max(width / height, height / width) if (height > 0 and width > 0) else float('inf')
         return width >= self.min_face_size and height >= self.min_face_size and aspect_ratio <= self.max_aspect_ratio
 
     def save_results(self, output_file, face_detections):

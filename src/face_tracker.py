@@ -339,14 +339,17 @@ class FrameSelector:
                     if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
                         continue
 
+                    # Calculate quality metrics on ORIGINAL tight box (not expanded)
+                    tight_face = frame[orig_y1:orig_y2, orig_x1:orig_x2]
+                    if tight_face.size == 0:
+                        continue
+                    gray_face = cv2.cvtColor(tight_face, cv2.COLOR_BGR2GRAY)
+
                     # Use expanded box for saving cropped image (easier to identify)
                     x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, width, height)
                     face_image = frame[y1:y2, x1:x2]
                     if face_image.size == 0:
                         continue
-
-                    # Calculate quality metrics
-                    gray_face = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
                     face_size = width_cropped * height_cropped
                     brightness = self.calculate_brightness(gray_face)
                     sharpness = self.calculate_sharpness(gray_face)
@@ -476,14 +479,18 @@ class FrameSelector:
                         if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
                             continue
 
+                        # Calculate quality metrics on ORIGINAL tight box (not expanded)
+                        tight_face = frame[orig_y1:orig_y2, orig_x1:orig_x2]
+                        if tight_face.size == 0:
+                            print(f"Warning: Face image is empty for frame {frame_idx}. Skipping.")
+                            continue
+                        gray_face = cv2.cvtColor(tight_face, cv2.COLOR_BGR2GRAY)
+
                         # Use expanded box for saving cropped image
                         x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, width, height)
                         face_image = frame[y1:y2, x1:x2]
                         if face_image.size == 0:
-                            print(f"Warning: Face image is empty for frame {frame_idx}. Skipping.")
                             continue
-
-                        gray_face = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
                         face_size = width_cropped * height_cropped
                         brightness = self.calculate_brightness(gray_face)
                         sharpness = self.calculate_sharpness(gray_face)
