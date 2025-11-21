@@ -170,14 +170,96 @@ class FaceTracker:
         return all_tracked_faces
 
 class FrameSelector:
-    def __init__(self, video_file, top_n=3, output_dir=None, save_images=True):
+    def __init__(self, video_file, top_n=3, output_dir=None, save_images=True,
+                 crop_expansion=0.2, min_crop_size=50):
+        """
+        Initialize FrameSelector.
+
+        Args:
+            video_file: Path to video file
+            top_n: Number of top frames to select per face
+            output_dir: Directory to save cropped face images
+            save_images: Whether to save cropped face images
+            crop_expansion: Ratio to expand bounding boxes when cropping (0.2 = 20% padding).
+                           This makes faces easier to identify visually while keeping
+                           original tight boxes in metadata for embedding extraction.
+            min_crop_size: Minimum face size in pixels to save (filters tiny/blurry crops)
+        """
         self.video_file = video_file
         self.top_n = top_n
         self.output_dir = output_dir
         self.save_images = save_images
+        self.crop_expansion = crop_expansion
+        self.min_crop_size = min_crop_size
 
         if save_images and output_dir:
             os.makedirs(output_dir, exist_ok=True)
+
+    def expand_box_for_crop(self, box, frame_width, frame_height):
+        """Expand bounding box for cropping with boundary checks."""
+        x1, y1, x2, y2 = box
+        width = x2 - x1
+        height = y2 - y1
+
+        # Expand by crop_expansion ratio
+        x_expand = width * self.crop_expansion
+        y_expand = height * self.crop_expansion
+
+        # Apply expansion with boundary clamping
+        new_x1 = max(0, int(x1 - x_expand))
+        new_y1 = max(0, int(y1 - y_expand))
+        new_x2 = min(frame_width, int(x2 + x_expand))
+        new_y2 = min(frame_height, int(y2 + y_expand))
+
+        return new_x1, new_y1, new_x2, new_y2
+
+    def _score_face(self, frame, face_coords, confidence):
+        """
+        Validate and score a single face based on quality metrics.
+
+        Returns:
+            tuple: (score, face_image, face_coords) or (None, None, None) if invalid
+        """
+        frame_height, frame_width = frame.shape[:2]
+
+        # Get original tight box dimensions for quality metrics
+        orig_x1, orig_y1, orig_x2, orig_y2 = map(int, face_coords)
+        orig_x1, orig_y1 = max(0, orig_x1), max(0, orig_y1)
+        orig_x2, orig_y2 = min(frame_width, orig_x2), min(frame_height, orig_y2)
+
+        width_cropped = max(0, orig_x2 - orig_x1)
+        height_cropped = max(0, orig_y2 - orig_y1)
+
+        # Skip faces that are too small (also handles zero-sized crops)
+        if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
+            return None, None, None
+
+        # Calculate quality metrics on ORIGINAL tight box
+        tight_face = frame[orig_y1:orig_y2, orig_x1:orig_x2]
+        if tight_face.size == 0:
+            return None, None, None
+        gray_face = cv2.cvtColor(tight_face, cv2.COLOR_BGR2GRAY)
+
+        # Use expanded box for saving cropped image
+        x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, frame_width, frame_height)
+        face_image = frame[y1:y2, x1:x2]
+        if face_image.size == 0:
+            return None, None, None
+
+        face_size = width_cropped * height_cropped
+        brightness = self.calculate_brightness(gray_face)
+        sharpness = self.calculate_sharpness(gray_face)
+
+        # Normalize components
+        normalized_face_size = face_size / (frame_width * frame_height)
+        normalized_brightness = brightness / 255.0
+        normalized_sharpness = sharpness / (sharpness + 100.0)
+
+        # Combine features into a score
+        score = (confidence + 0.5 * normalized_face_size +
+                 0.3 * normalized_brightness + 0.2 * normalized_sharpness)
+
+        return score, face_image, face_coords
 
     @staticmethod
     def calculate_brightness(image):
@@ -291,34 +373,10 @@ class FrameSelector:
                     face_coords = face_req['face_coords']
                     confidence = face_req['confidence']
 
-                    # Crop and validate face
-                    x1, y1, x2, y2 = map(int, face_coords)
-                    x1, y1 = max(0, x1), max(0, y1)
-                    x2, y2 = min(width, x2), min(height, y2)
-
-                    width_cropped = max(0, x2 - x1)
-                    height_cropped = max(0, y2 - y1)
-                    if width_cropped == 0 or height_cropped == 0:
+                    # Score and validate face
+                    score, face_image, _ = self._score_face(frame, face_coords, confidence)
+                    if score is None:
                         continue
-
-                    face_image = frame[y1:y2, x1:x2]
-                    if face_image.size == 0:
-                        continue
-
-                    # Calculate quality metrics
-                    gray_face = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-                    face_size = width_cropped * height_cropped
-                    brightness = self.calculate_brightness(gray_face)
-                    sharpness = self.calculate_sharpness(gray_face)
-
-                    # Normalize components
-                    normalized_face_size = face_size / (width * height)
-                    normalized_brightness = brightness / 255.0
-                    normalized_sharpness = sharpness / (sharpness + 100.0)
-
-                    # Calculate score
-                    score = (confidence + 0.5 * normalized_face_size +
-                            0.3 * normalized_brightness + 0.2 * normalized_sharpness)
 
                     # Save cropped face
                     unique_face_id = f"{scene_id}_face_{face_id}"
@@ -419,34 +477,10 @@ class FrameSelector:
                             print(f"Warning: Could not read frame {frame_idx}. Skipping.")
                             continue
 
-                        height, width, _ = frame.shape
-                        x1, y1, x2, y2 = map(int, face_coords)
-                        x1, y1 = max(0, x1), max(0, y1)
-                        x2, y2 = min(width, x2), min(height, y2)
-
-                        width_cropped = max(0, x2 - x1)
-                        height_cropped = max(0, y2 - y1)
-                        if width_cropped == 0 or height_cropped == 0:
-                            print(f"Warning: Invalid bounding box {face_coords} for frame {frame_idx}. Skipping.")
+                        # Score and validate face
+                        score, face_image, _ = self._score_face(frame, face_coords, confidence)
+                        if score is None:
                             continue
-
-                        face_image = frame[y1:y2, x1:x2]
-                        if face_image.size == 0:
-                            print(f"Warning: Face image is empty for frame {frame_idx}. Skipping.")
-                            continue
-
-                        gray_face = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-                        face_size = width_cropped * height_cropped
-                        brightness = self.calculate_brightness(gray_face)
-                        sharpness = self.calculate_sharpness(gray_face)
-
-                        # Normalize the components
-                        normalized_face_size = face_size / (width * height)
-                        normalized_brightness = brightness / 255.0
-                        normalized_sharpness = sharpness / (sharpness + 100.0)
-
-                        # Combine features into a score (higher is better)
-                        score = confidence + 0.5 * normalized_face_size + 0.3 * normalized_brightness + 0.2 * normalized_sharpness
 
                         # Save the image and get its relative path
                         relative_path = self.save_cropped_face(face_image, f"{scene_id}_face_{face_id}", frame_idx)
