@@ -271,11 +271,15 @@ class FrameSelector:
                 while current_frame_idx <= target_frame:
                     ret, frame = cap.read()
                     if not ret:
-                        print(f"Warning: Could not read frame {current_frame_idx}")
+                        print(f"Warning: Could not read frame {current_frame_idx}. Stopping sequential read.")
                         break
                     current_frame_idx += 1
 
-                if not ret or current_frame_idx - 1 != target_frame:
+                # If read failed, stop processing entirely
+                if not ret:
+                    break
+
+                if current_frame_idx - 1 != target_frame:
                     print(f"Warning: Skipping frame {target_frame}")
                     required_idx += 1
                     continue

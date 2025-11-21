@@ -80,7 +80,7 @@ def save_json(data, output_file):
         sys.exit(1)
 
 
-def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32):
+def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32, num_workers=0):
     face_embedder = FaceEmbedder()
     face_clusterer = FaceClusterer(similarity_threshold=0.6, max_iterations=100)
 
@@ -89,9 +89,9 @@ def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size
 
     # Use batch processing for better GPU utilization (2-4x faster)
     if use_batch:
-        print(f"Using batch processing with batch_size={batch_size}")
+        print(f"Using batch processing with batch_size={batch_size}, num_workers={num_workers}")
         face_embeddings = face_embedder.get_face_embeddings_batch(
-            selected_faces, image_dir, batch_size=batch_size, num_workers=4
+            selected_faces, image_dir, batch_size=batch_size, num_workers=num_workers
         )
     else:
         print("Using sequential processing (slower)")
@@ -113,6 +113,8 @@ if __name__ == "__main__":
                        help='Disable batch processing (use sequential processing)')
     parser.add_argument('--batch-size', type=int, default=32,
                        help='Batch size for embedding extraction (default: 32)')
+    parser.add_argument('--num-workers', type=int, default=0,
+                       help='Number of data loading workers (default: 0, recommended for CUDA)')
 
     args = parser.parse_args()
     video_name = args.video_name
@@ -126,5 +128,6 @@ if __name__ == "__main__":
 
     main(video_name, face_selection_file, output_dir,
          use_batch=not args.no_batch,
-         batch_size=args.batch_size)
+         batch_size=args.batch_size,
+         num_workers=args.num_workers)
     

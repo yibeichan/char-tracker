@@ -10,7 +10,6 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=16G
 #SBATCH --mail-type=FAIL,END
-#SBATCH --mail-user=yibei@mit.edu
 
 # Partial pipeline script (03-04b) for batch processing with SLURM
 # This script runs steps 03-04b sequentially for each video in the array
@@ -35,9 +34,9 @@ micromamba activate friends_char_track
 # source $HOME/miniconda3/etc/profile.d/conda.sh
 # conda activate friends_char_track
 
-# Set up paths - use absolute paths for reliability in SLURM
-REPO_ROOT="/orcd/home/002/yibei/face-track"
-SCRIPTS_DIR="$REPO_ROOT/scripts"
+# Set up paths dynamically based on script location
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPTS_DIR/.." && pwd)"
 TASK_FILE="$REPO_ROOT/data/episode_id.txt"
 LOG_DIR="$REPO_ROOT/logs"
 
@@ -85,20 +84,20 @@ echo ""
 # Change to scripts directory
 cd "$SCRIPTS_DIR" || exit 1
 
-# Build command with optimization flags
-CMD="./run_pipeline_03_to_04b.sh \"$TASK_ID\" --mode \"$MODE\""
+# Build command with optimization flags using bash array (safer than eval)
+CMD=("./run_pipeline_03_to_04b.sh" "$TASK_ID" --mode "$MODE")
 if [ -n "$USE_SEQUENTIAL" ]; then
-    CMD="$CMD --no-sequential"
+    CMD+=(--no-sequential)
 fi
 if [ -n "$USE_BATCH" ]; then
-    CMD="$CMD --no-batch"
+    CMD+=(--no-batch)
 fi
-CMD="$CMD --batch-size \"$BATCH_SIZE\""
+CMD+=(--batch-size "$BATCH_SIZE")
 
 # Run the partial pipeline script (03-04b)
 echo "Starting partial pipeline execution (steps 03-04b)..."
-echo "Command: $CMD"
-eval $CMD
+echo "Command: ${CMD[*]}"
+"${CMD[@]}"
 
 # Capture exit code
 EXIT_CODE=$?

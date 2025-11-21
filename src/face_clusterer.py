@@ -62,7 +62,7 @@ class FaceEmbedder:
 
         return face_embeddings
 
-    def get_face_embeddings_batch(self, selected_frames, image_dir, batch_size=32, num_workers=4):
+    def get_face_embeddings_batch(self, selected_frames, image_dir, batch_size=32, num_workers=0):
         """
         Get embeddings for each cropped face image using batch processing.
 
@@ -73,13 +73,14 @@ class FaceEmbedder:
             selected_frames: Dictionary of selected frames per scene
             image_dir: Directory containing face images
             batch_size: Number of images to process in each batch (default: 32)
-            num_workers: Number of worker threads for data loading (default: 4)
+            num_workers: Number of worker processes for data loading (default: 0).
+                        Note: num_workers > 0 with CUDA can cause issues in some environments.
 
         Returns:
             List of face embeddings with metadata
         """
-        # Create dataset and dataloader
-        dataset = FaceImageDataset(selected_frames, image_dir, self.preprocess_face, self.device)
+        # Create dataset and dataloader (preprocessing on CPU)
+        dataset = FaceImageDataset(selected_frames, image_dir)
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -92,8 +93,10 @@ class FaceEmbedder:
         all_embeddings = []
 
         with torch.no_grad():
-            for batch_tensors, batch_metadata in tqdm(dataloader, desc="Extracting Face Embeddings (Batched)", unit="batch"):
-                # Move batch to device
+            for batch_tensors, scene_ids, unique_face_ids, frame_idxs, image_paths in tqdm(
+                dataloader, desc="Extracting Face Embeddings (Batched)", unit="batch"
+            ):
+                # Move batch to GPU
                 batch_tensors = batch_tensors.to(self.device)
 
                 # Get embeddings for entire batch
@@ -101,10 +104,14 @@ class FaceEmbedder:
 
                 # Store embeddings with metadata
                 for i, embedding in enumerate(batch_embeddings):
-                    metadata = batch_metadata[i]
                     all_embeddings.append({
                         'embedding': embedding,
-                        'metadata': metadata
+                        'metadata': {
+                            'scene_id': scene_ids[i],
+                            'unique_face_id': unique_face_ids[i],
+                            'frame_idx': frame_idxs[i].item() if hasattr(frame_idxs[i], 'item') else frame_idxs[i],
+                            'image_path': image_paths[i]
+                        }
                     })
 
         # Reconstruct the hierarchical structure
@@ -152,17 +159,13 @@ class FaceImageDataset(Dataset):
     This dataset flattens the hierarchical structure of faces/frames into a single
     list for efficient batch processing.
     """
-    def __init__(self, selected_frames, image_dir, preprocess_fn, device):
+    def __init__(self, selected_frames, image_dir):
         """
         Args:
             selected_frames: Dictionary of selected frames per scene
             image_dir: Directory containing face images
-            preprocess_fn: Function to preprocess face images
-            device: Device for tensor operations
         """
         self.image_dir = image_dir
-        self.preprocess_fn = preprocess_fn
-        self.device = device
 
         # Flatten all image paths with metadata
         self.image_items = []
@@ -181,7 +184,7 @@ class FaceImageDataset(Dataset):
 
     def __getitem__(self, idx):
         """
-        Load and preprocess a single image.
+        Load and preprocess a single image on CPU.
 
         Returns:
             tuple: (preprocessed_tensor, metadata_dict)
@@ -193,21 +196,13 @@ class FaceImageDataset(Dataset):
         if image is None:
             raise ValueError(f"Error loading image: {item['image_path']}")
 
-        # Preprocess (resize, normalize)
-        face_tensor = self.preprocess_fn(image)
+        # Preprocess on CPU (resize, normalize) - GPU transfer happens in main loop
+        face_image = cv2.resize(image, (160, 160))
+        face_tensor = torch.tensor(face_image).permute(2, 0, 1).float()
+        face_tensor = (face_tensor - 127.5) / 128.0
 
-        # Remove batch dimension added by preprocess_fn
-        face_tensor = face_tensor.squeeze(0)
-
-        # Return tensor and metadata
-        metadata = {
-            'scene_id': item['scene_id'],
-            'unique_face_id': item['unique_face_id'],
-            'frame_idx': item['frame_idx'],
-            'image_path': item['image_path']
-        }
-
-        return face_tensor, metadata
+        # Return tensor and metadata (as individual values for proper collation)
+        return face_tensor, item['scene_id'], item['unique_face_id'], item['frame_idx'], item['image_path']
 
 class FaceClusterer:
     def __init__(self, similarity_threshold: float = 0.6, max_iterations: int = 100):
