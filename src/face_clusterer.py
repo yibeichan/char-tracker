@@ -24,10 +24,11 @@ class FaceEmbedder:
         return face_tensor
 
     def preprocess_face(self, face_image):
-        """Preprocess the face image for embedding extraction (resize, normalize, etc.)."""
-        face_image = cv2.resize(face_image, (160, 160))  # Resize to 160x160 pixels if required
+        """Preprocess the face image for embedding extraction (resize, BGR->RGB, normalize)."""
+        face_image = cv2.resize(face_image, (160, 160))
+        face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
         face_tensor = torch.tensor(face_image).permute(2, 0, 1).float().unsqueeze(0).to(self.device)
-        face_tensor = (face_tensor - 127.5) / 128.0  # Normalize
+        face_tensor = (face_tensor - 127.5) / 128.0
         return face_tensor
 
     def get_face_embeddings(self, selected_frames, image_dir):
@@ -196,8 +197,8 @@ class FaceImageDataset(Dataset):
         if image is None:
             raise ValueError(f"Error loading image: {item['image_path']}")
 
-        # Preprocess on CPU (resize, normalize) - GPU transfer happens in main loop
-        face_image = cv2.resize(image, (160, 160))
+        # Preprocess on CPU (resize, BGR->RGB, normalize) - GPU transfer happens in main loop
+        face_image = cv2.cvtColor(cv2.resize(image, (160, 160)), cv2.COLOR_BGR2RGB)
         face_tensor = torch.tensor(face_image).permute(2, 0, 1).float()
         face_tensor = (face_tensor - 127.5) / 128.0
 

@@ -188,7 +188,11 @@ log_info "=========================================="
 log_info "STEP 03: Within-Scene Tracking"
 log_info "=========================================="
 
-python 03_within_scene_tracking.py "$VIDEO_NAME" $NO_SEQUENTIAL
+cmd_step03=("python" "03_within_scene_tracking.py" "$VIDEO_NAME")
+if [ -n "$NO_SEQUENTIAL" ]; then
+    cmd_step03+=("--no-sequential")
+fi
+"${cmd_step03[@]}"
 
 # Validate outputs
 check_dir_exists "$TRACKING_DIR" "Tracking directory" || exit 1
@@ -212,7 +216,12 @@ log_info "=========================================="
 log_info "STEP 04: Face Clustering"
 log_info "=========================================="
 
-python 04_face_clustering.py "$VIDEO_NAME" $NO_BATCH --batch-size "$BATCH_SIZE"
+cmd_step04=("python" "04_face_clustering.py" "$VIDEO_NAME")
+if [ -n "$NO_BATCH" ]; then
+    cmd_step04+=("--no-batch")
+fi
+cmd_step04+=("--batch-size" "$BATCH_SIZE")
+"${cmd_step04[@]}"
 
 # Validate output
 check_file_exists "$CLUSTERING_OUTPUT" "Face clustering output" || exit 1
