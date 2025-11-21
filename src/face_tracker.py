@@ -213,6 +213,54 @@ class FrameSelector:
 
         return new_x1, new_y1, new_x2, new_y2
 
+    def _score_face(self, frame, face_coords, confidence):
+        """
+        Validate and score a single face based on quality metrics.
+
+        Returns:
+            tuple: (score, face_image, face_coords) or (None, None, None) if invalid
+        """
+        frame_height, frame_width = frame.shape[:2]
+
+        # Get original tight box dimensions for quality metrics
+        orig_x1, orig_y1, orig_x2, orig_y2 = map(int, face_coords)
+        orig_x1, orig_y1 = max(0, orig_x1), max(0, orig_y1)
+        orig_x2, orig_y2 = min(frame_width, orig_x2), min(frame_height, orig_y2)
+
+        width_cropped = max(0, orig_x2 - orig_x1)
+        height_cropped = max(0, orig_y2 - orig_y1)
+
+        # Skip faces that are too small (also handles zero-sized crops)
+        if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
+            return None, None, None
+
+        # Calculate quality metrics on ORIGINAL tight box
+        tight_face = frame[orig_y1:orig_y2, orig_x1:orig_x2]
+        if tight_face.size == 0:
+            return None, None, None
+        gray_face = cv2.cvtColor(tight_face, cv2.COLOR_BGR2GRAY)
+
+        # Use expanded box for saving cropped image
+        x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, frame_width, frame_height)
+        face_image = frame[y1:y2, x1:x2]
+        if face_image.size == 0:
+            return None, None, None
+
+        face_size = width_cropped * height_cropped
+        brightness = self.calculate_brightness(gray_face)
+        sharpness = self.calculate_sharpness(gray_face)
+
+        # Normalize components
+        normalized_face_size = face_size / (frame_width * frame_height)
+        normalized_brightness = brightness / 255.0
+        normalized_sharpness = sharpness / (sharpness + 100.0)
+
+        # Combine features into a score
+        score = (confidence + 0.5 * normalized_face_size +
+                 0.3 * normalized_brightness + 0.2 * normalized_sharpness)
+
+        return score, face_image, face_coords
+
     @staticmethod
     def calculate_brightness(image):
         """Calculate the brightness of an image."""
@@ -325,43 +373,10 @@ class FrameSelector:
                     face_coords = face_req['face_coords']
                     confidence = face_req['confidence']
 
-                    # Get original tight box dimensions for quality metrics
-                    orig_x1, orig_y1, orig_x2, orig_y2 = map(int, face_coords)
-                    orig_x1, orig_y1 = max(0, orig_x1), max(0, orig_y1)
-                    orig_x2, orig_y2 = min(width, orig_x2), min(height, orig_y2)
-
-                    width_cropped = max(0, orig_x2 - orig_x1)
-                    height_cropped = max(0, orig_y2 - orig_y1)
-                    if width_cropped == 0 or height_cropped == 0:
+                    # Score and validate face
+                    score, face_image, _ = self._score_face(frame, face_coords, confidence)
+                    if score is None:
                         continue
-
-                    # Skip faces that are too small
-                    if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
-                        continue
-
-                    # Calculate quality metrics on ORIGINAL tight box (not expanded)
-                    tight_face = frame[orig_y1:orig_y2, orig_x1:orig_x2]
-                    if tight_face.size == 0:
-                        continue
-                    gray_face = cv2.cvtColor(tight_face, cv2.COLOR_BGR2GRAY)
-
-                    # Use expanded box for saving cropped image (easier to identify)
-                    x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, width, height)
-                    face_image = frame[y1:y2, x1:x2]
-                    if face_image.size == 0:
-                        continue
-                    face_size = width_cropped * height_cropped
-                    brightness = self.calculate_brightness(gray_face)
-                    sharpness = self.calculate_sharpness(gray_face)
-
-                    # Normalize components
-                    normalized_face_size = face_size / (width * height)
-                    normalized_brightness = brightness / 255.0
-                    normalized_sharpness = sharpness / (sharpness + 100.0)
-
-                    # Calculate score
-                    score = (confidence + 0.5 * normalized_face_size +
-                            0.3 * normalized_brightness + 0.2 * normalized_sharpness)
 
                     # Save cropped face
                     unique_face_id = f"{scene_id}_face_{face_id}"
@@ -462,46 +477,10 @@ class FrameSelector:
                             print(f"Warning: Could not read frame {frame_idx}. Skipping.")
                             continue
 
-                        height, width, _ = frame.shape
-
-                        # Get original tight box dimensions
-                        orig_x1, orig_y1, orig_x2, orig_y2 = map(int, face_coords)
-                        orig_x1, orig_y1 = max(0, orig_x1), max(0, orig_y1)
-                        orig_x2, orig_y2 = min(width, orig_x2), min(height, orig_y2)
-
-                        width_cropped = max(0, orig_x2 - orig_x1)
-                        height_cropped = max(0, orig_y2 - orig_y1)
-                        if width_cropped == 0 or height_cropped == 0:
-                            print(f"Warning: Invalid bounding box {face_coords} for frame {frame_idx}. Skipping.")
+                        # Score and validate face
+                        score, face_image, _ = self._score_face(frame, face_coords, confidence)
+                        if score is None:
                             continue
-
-                        # Skip faces that are too small
-                        if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
-                            continue
-
-                        # Calculate quality metrics on ORIGINAL tight box (not expanded)
-                        tight_face = frame[orig_y1:orig_y2, orig_x1:orig_x2]
-                        if tight_face.size == 0:
-                            print(f"Warning: Face image is empty for frame {frame_idx}. Skipping.")
-                            continue
-                        gray_face = cv2.cvtColor(tight_face, cv2.COLOR_BGR2GRAY)
-
-                        # Use expanded box for saving cropped image
-                        x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, width, height)
-                        face_image = frame[y1:y2, x1:x2]
-                        if face_image.size == 0:
-                            continue
-                        face_size = width_cropped * height_cropped
-                        brightness = self.calculate_brightness(gray_face)
-                        sharpness = self.calculate_sharpness(gray_face)
-
-                        # Normalize the components
-                        normalized_face_size = face_size / (width * height)
-                        normalized_brightness = brightness / 255.0
-                        normalized_sharpness = sharpness / (sharpness + 100.0)
-
-                        # Combine features into a score (higher is better)
-                        score = confidence + 0.5 * normalized_face_size + 0.3 * normalized_brightness + 0.2 * normalized_sharpness
 
                         # Save the image and get its relative path
                         relative_path = self.save_cropped_face(face_image, f"{scene_id}_face_{face_id}", frame_idx)
