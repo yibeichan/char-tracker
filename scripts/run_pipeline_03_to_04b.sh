@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Sequential pipeline script to process a single video through steps 01-04b
-# Usage: ./run_pipeline_01_to_04b.sh <video_name> [--mode copy|move|symlink]
+# Partial pipeline script to process a single video through steps 03-04b
+# Assumes steps 01-02 have already completed
+# Usage: ./run_pipeline_03_to_04b.sh <video_name> [--mode copy|move|symlink]
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
@@ -154,53 +155,31 @@ fi
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VIDEO_FILE="${SCRATCH_DIR}/data/mkv2mp4/${VIDEO_NAME}.mp4"
 
-# Output paths for each step
+# Input paths required from previous steps
 SCENE_OUTPUT="${SCRATCH_DIR}/output/scene_detection/${VIDEO_NAME}.txt"
 FACE_DETECTION_OUTPUT="${SCRATCH_DIR}/output/face_detection/${VIDEO_NAME}.json"
+
+# Output paths for steps 03-04b
 TRACKING_DIR="${SCRATCH_DIR}/output/face_tracking/${VIDEO_NAME}"
 TRACKED_FACES="${TRACKING_DIR}/${VIDEO_NAME}_tracked_faces.json"
 SELECTED_FRAMES="${TRACKING_DIR}/${VIDEO_NAME}_selected_frames_per_face.json"
 CLUSTERING_OUTPUT="${SCRATCH_DIR}/output/face_clustering/${VIDEO_NAME}_matched_faces_with_clusters.json"
 REORGANIZE_DIR="${SCRATCH_DIR}/output/face_tracking_by_cluster/${VIDEO_NAME}"
 
-# Check if input video exists
-log_info "Checking if input video exists..."
+# Check prerequisites from steps 01-02
+log_info "Checking prerequisites from previous steps..."
 check_file_exists "$VIDEO_FILE" "Input video" || exit 1
+check_file_exists "$SCENE_OUTPUT" "Scene detection output (step 01)" || exit 1
+check_file_exists "$FACE_DETECTION_OUTPUT" "Face detection output (step 02)" || exit 1
 
 echo ""
 log_info "=========================================="
-log_info "Starting pipeline for: $VIDEO_NAME"
+log_info "Starting partial pipeline (03-04b) for: $VIDEO_NAME"
 log_info "=========================================="
 echo ""
 
 # Change to scripts directory for all pipeline steps
 cd "$SCRIPTS_DIR"
-
-# ============================================================================
-# Step 01: Scene Detection
-# ============================================================================
-log_info "=========================================="
-log_info "STEP 01: Scene Detection"
-log_info "=========================================="
-
-python 01_scene_detection.py "$VIDEO_NAME"
-
-# Validate output
-check_file_exists "$SCENE_OUTPUT" "Scene detection output" || exit 1
-echo ""
-
-# ============================================================================
-# Step 02: Face Detection
-# ============================================================================
-log_info "=========================================="
-log_info "STEP 02: Face Detection"
-log_info "=========================================="
-
-python 02_face_detection.py "$VIDEO_NAME"
-
-# Validate output
-check_file_exists "$FACE_DETECTION_OUTPUT" "Face detection output" || exit 1
-echo ""
 
 # ============================================================================
 # Step 03: Within-Scene Tracking
@@ -273,15 +252,13 @@ echo ""
 # Pipeline Complete
 # ============================================================================
 log_info "=========================================="
-log_success "PIPELINE COMPLETE!"
+log_success "PARTIAL PIPELINE (03-04b) COMPLETE!"
 log_info "=========================================="
 echo ""
 log_info "Output locations:"
-log_info "  - Scene detection:    $SCENE_OUTPUT"
-log_info "  - Face detection:     $FACE_DETECTION_OUTPUT"
 log_info "  - Face tracking:      $TRACKING_DIR"
 log_info "  - Face clustering:    $CLUSTERING_OUTPUT"
 log_info "  - Reorganized faces:  $REORGANIZE_DIR"
 log_info "  - Cluster zip file:   ${SCRATCH_DIR}/output/face_tracking_by_cluster/${VIDEO_NAME}.zip"
 echo ""
-log_success "All steps completed successfully for video: $VIDEO_NAME"
+log_success "Steps 03-04b completed successfully for video: $VIDEO_NAME"

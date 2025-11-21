@@ -1,28 +1,29 @@
 #!/bin/bash
 
-#SBATCH --job-name=pipeline_01_04b
+#SBATCH --job-name=pipeline_03_04b
 #SBATCH --output=/orcd/home/002/yibei/face-track/logs/%x_%j.out
 #SBATCH --error=/orcd/home/002/yibei/face-track/logs/%x_%j.err
 #SBATCH --partition=ou_bcs_low
-#SBATCH --time=00:45:00
+#SBATCH --time=00:30:00
 #SBATCH --array=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --mem=16G
 #SBATCH --mail-type=FAIL,END
 
-# Full pipeline script (01-04b) for batch processing with SLURM
-# This script runs all 5 steps sequentially for each video in the array
+# Partial pipeline script (03-04b) for batch processing with SLURM
+# This script runs steps 03-04b sequentially for each video in the array
+# Assumes steps 01-02 have already completed
 #
 # With optimizations enabled (default):
 #   - Sequential frame reading: 5-10x faster for step 03
 #   - Batch embeddings: 2-4x faster for step 04
-#   - Expected time for steps 03-04: ~10-15 minutes
+#   - Expected time: ~10-15 minutes per episode
 #
 # To disable optimizations, set environment variables:
-#   NO_SEQUENTIAL=1 sbatch run_pipeline_01_to_04b_batch.sh
-#   NO_BATCH=1 sbatch run_pipeline_01_to_04b_batch.sh
-#   BATCH_SIZE=64 sbatch run_pipeline_01_to_04b_batch.sh
+#   NO_SEQUENTIAL=1 sbatch run_pipeline_03_to_04b_batch.sh
+#   NO_BATCH=1 sbatch run_pipeline_03_to_04b_batch.sh
+#   BATCH_SIZE=64 sbatch run_pipeline_03_to_04b_batch.sh
 
 # Source micromamba (adjust if using conda instead)
 # For micromamba:
@@ -90,7 +91,7 @@ echo ""
 cd "$SCRIPTS_DIR" || exit 1
 
 # Build command with optimization flags using bash array (safer than eval)
-CMD=("./run_pipeline_01_to_04b.sh" "$TASK_ID" --mode "$MODE")
+CMD=("./run_pipeline_03_to_04b.sh" "$TASK_ID" --mode "$MODE")
 if [ -n "$USE_SEQUENTIAL" ]; then
     CMD+=(--no-sequential)
 fi
@@ -99,8 +100,8 @@ if [ -n "$USE_BATCH" ]; then
 fi
 CMD+=(--batch-size "$BATCH_SIZE")
 
-# Run the full pipeline script
-echo "Starting pipeline execution..."
+# Run the partial pipeline script (03-04b)
+echo "Starting partial pipeline execution (steps 03-04b)..."
 echo "Command: ${CMD[*]}"
 "${CMD[@]}"
 
@@ -110,12 +111,12 @@ EXIT_CODE=$?
 if [ $EXIT_CODE -eq 0 ]; then
     echo ""
     echo "=========================================="
-    echo "SUCCESS: Pipeline completed for $TASK_ID"
+    echo "SUCCESS: Partial pipeline (03-04b) completed for $TASK_ID"
     echo "=========================================="
 else
     echo ""
     echo "=========================================="
-    echo "FAILED: Pipeline failed for $TASK_ID with exit code $EXIT_CODE"
+    echo "FAILED: Partial pipeline (03-04b) failed for $TASK_ID with exit code $EXIT_CODE"
     echo "=========================================="
     exit $EXIT_CODE
 fi
