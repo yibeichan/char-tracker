@@ -7,13 +7,28 @@ import numpy as np
 from tqdm import tqdm
 
 class FaceDetector:
-    def __init__(self, video_path, output_dir, device='cuda' if torch.cuda.is_available() else 'cpu', min_confidence=0.8, save_annotated_video=False):
+    def __init__(self, video_path, output_dir, device='cuda' if torch.cuda.is_available() else 'cpu',
+                 min_confidence=0.8, save_annotated_video=False, min_face_size=40, max_aspect_ratio=1.5):
+        """
+        Initialize FaceDetector.
+
+        Args:
+            video_path: Path to input video
+            output_dir: Directory for outputs
+            device: cuda or cpu
+            min_confidence: Minimum MTCNN confidence (0-1)
+            save_annotated_video: Whether to save annotated video
+            min_face_size: Minimum face width/height in pixels (filters tiny/distant faces)
+            max_aspect_ratio: Maximum width/height ratio (filters non-face rectangles)
+        """
         self.video_path = video_path
         self.output_dir = output_dir
         self.device = device
         self.mtcnn = MTCNN(keep_all=True, device=self.device, factor=0.6)  # Use MTCNN for face detection with scaling factor
         self.min_confidence = min_confidence
         self.save_annotated_video = save_annotated_video
+        self.min_face_size = min_face_size
+        self.max_aspect_ratio = max_aspect_ratio
     
     def detect_faces_in_video(self):
         cap = cv2.VideoCapture(self.video_path)
@@ -106,11 +121,12 @@ class FaceDetector:
                         text_color, 2)
         return frame
 
-    def _is_valid_box(self, box, min_size=20, max_aspect_ratio=1.5):
+    def _is_valid_box(self, box):
+        """Check if bounding box meets size and aspect ratio requirements."""
         width = box[2] - box[0]
         height = box[3] - box[1]
-        aspect_ratio = max(width / height, height / width)
-        return width > min_size and height > min_size and aspect_ratio <= max_aspect_ratio
+        aspect_ratio = max(width / height, height / width) if height > 0 else float('inf')
+        return width >= self.min_face_size and height >= self.min_face_size and aspect_ratio <= self.max_aspect_ratio
 
     def save_results(self, output_file, face_detections):
         with open(output_file, 'w') as f:

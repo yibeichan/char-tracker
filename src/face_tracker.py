@@ -170,14 +170,48 @@ class FaceTracker:
         return all_tracked_faces
 
 class FrameSelector:
-    def __init__(self, video_file, top_n=3, output_dir=None, save_images=True):
+    def __init__(self, video_file, top_n=3, output_dir=None, save_images=True,
+                 crop_expansion=0.2, min_crop_size=50):
+        """
+        Initialize FrameSelector.
+
+        Args:
+            video_file: Path to video file
+            top_n: Number of top frames to select per face
+            output_dir: Directory to save cropped face images
+            save_images: Whether to save cropped face images
+            crop_expansion: Ratio to expand bounding boxes when cropping (0.2 = 20% padding).
+                           This makes faces easier to identify visually while keeping
+                           original tight boxes in metadata for embedding extraction.
+            min_crop_size: Minimum face size in pixels to save (filters tiny/blurry crops)
+        """
         self.video_file = video_file
         self.top_n = top_n
         self.output_dir = output_dir
         self.save_images = save_images
+        self.crop_expansion = crop_expansion
+        self.min_crop_size = min_crop_size
 
         if save_images and output_dir:
             os.makedirs(output_dir, exist_ok=True)
+
+    def expand_box_for_crop(self, box, frame_width, frame_height):
+        """Expand bounding box for cropping with boundary checks."""
+        x1, y1, x2, y2 = box
+        width = x2 - x1
+        height = y2 - y1
+
+        # Expand by crop_expansion ratio
+        x_expand = width * self.crop_expansion
+        y_expand = height * self.crop_expansion
+
+        # Apply expansion with boundary clamping
+        new_x1 = max(0, int(x1 - x_expand))
+        new_y1 = max(0, int(y1 - y_expand))
+        new_x2 = min(frame_width, int(x2 + x_expand))
+        new_y2 = min(frame_height, int(y2 + y_expand))
+
+        return new_x1, new_y1, new_x2, new_y2
 
     @staticmethod
     def calculate_brightness(image):
@@ -291,16 +325,22 @@ class FrameSelector:
                     face_coords = face_req['face_coords']
                     confidence = face_req['confidence']
 
-                    # Crop and validate face
-                    x1, y1, x2, y2 = map(int, face_coords)
-                    x1, y1 = max(0, x1), max(0, y1)
-                    x2, y2 = min(width, x2), min(height, y2)
+                    # Get original tight box dimensions for quality metrics
+                    orig_x1, orig_y1, orig_x2, orig_y2 = map(int, face_coords)
+                    orig_x1, orig_y1 = max(0, orig_x1), max(0, orig_y1)
+                    orig_x2, orig_y2 = min(width, orig_x2), min(height, orig_y2)
 
-                    width_cropped = max(0, x2 - x1)
-                    height_cropped = max(0, y2 - y1)
+                    width_cropped = max(0, orig_x2 - orig_x1)
+                    height_cropped = max(0, orig_y2 - orig_y1)
                     if width_cropped == 0 or height_cropped == 0:
                         continue
 
+                    # Skip faces that are too small
+                    if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
+                        continue
+
+                    # Use expanded box for saving cropped image (easier to identify)
+                    x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, width, height)
                     face_image = frame[y1:y2, x1:x2]
                     if face_image.size == 0:
                         continue
@@ -420,16 +460,24 @@ class FrameSelector:
                             continue
 
                         height, width, _ = frame.shape
-                        x1, y1, x2, y2 = map(int, face_coords)
-                        x1, y1 = max(0, x1), max(0, y1)
-                        x2, y2 = min(width, x2), min(height, y2)
 
-                        width_cropped = max(0, x2 - x1)
-                        height_cropped = max(0, y2 - y1)
+                        # Get original tight box dimensions
+                        orig_x1, orig_y1, orig_x2, orig_y2 = map(int, face_coords)
+                        orig_x1, orig_y1 = max(0, orig_x1), max(0, orig_y1)
+                        orig_x2, orig_y2 = min(width, orig_x2), min(height, orig_y2)
+
+                        width_cropped = max(0, orig_x2 - orig_x1)
+                        height_cropped = max(0, orig_y2 - orig_y1)
                         if width_cropped == 0 or height_cropped == 0:
                             print(f"Warning: Invalid bounding box {face_coords} for frame {frame_idx}. Skipping.")
                             continue
 
+                        # Skip faces that are too small
+                        if width_cropped < self.min_crop_size or height_cropped < self.min_crop_size:
+                            continue
+
+                        # Use expanded box for saving cropped image
+                        x1, y1, x2, y2 = self.expand_box_for_crop(face_coords, width, height)
                         face_image = frame[y1:y2, x1:x2]
                         if face_image.size == 0:
                             print(f"Warning: Face image is empty for frame {frame_idx}. Skipping.")
