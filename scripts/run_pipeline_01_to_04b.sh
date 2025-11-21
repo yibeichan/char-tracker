@@ -66,7 +66,7 @@ check_dir_exists() {
 
 # Parse arguments
 if [ $# -lt 1 ]; then
-    log_error "Usage: $0 <video_name> [--mode copy|move|symlink] [--no-sequential] [--no-batch] [--batch-size N]"
+    log_error "Usage: $0 <video_name> [--mode copy|move|symlink] [--no-sequential] [--no-batch] [--batch-size N] [--model-name vggface2|senet50_256]"
     exit 1
 fi
 
@@ -75,6 +75,7 @@ MODE="copy"  # Default mode for 04b
 NO_SEQUENTIAL=""  # Empty = use sequential (optimized)
 NO_BATCH=""  # Empty = use batch processing (optimized)
 BATCH_SIZE="32"  # Default batch size
+MODEL_NAME="vggface2"  # Default embedding model
 
 # Parse optional arguments
 shift
@@ -109,6 +110,19 @@ while [ $# -gt 0 ]; do
             BATCH_SIZE="$2"
             shift 2
             ;;
+        --model-name)
+            if [ $# -lt 2 ]; then
+                log_error "Missing argument for --model-name."
+                exit 1
+            fi
+            if [[ "$2" =~ ^(vggface2|senet50_256)$ ]]; then
+                MODEL_NAME="$2"
+                shift 2
+            else
+                log_error "Invalid model-name: '$2'. Must be 'vggface2' or 'senet50_256'."
+                exit 1
+            fi
+            ;;
         *)
             log_error "Unknown argument: $1"
             exit 1
@@ -139,6 +153,7 @@ fi
 log_info "SCRATCH_DIR: $SCRATCH_DIR"
 log_info "Video name: $VIDEO_NAME"
 log_info "Mode for 04b: $MODE"
+log_info "Embedding model: $MODEL_NAME"
 if [ -z "$NO_SEQUENTIAL" ]; then
     log_info "Step 03: Sequential frame reading ENABLED (5-10x faster)"
 else
@@ -242,6 +257,7 @@ if [ -n "$NO_BATCH" ]; then
     cmd_step04+=("--no-batch")
 fi
 cmd_step04+=("--batch-size" "$BATCH_SIZE")
+cmd_step04+=("--model-name" "$MODEL_NAME")
 "${cmd_step04[@]}"
 
 # Validate output

@@ -55,9 +55,11 @@ MODE="${MODE:-symlink}"
 # Set NO_SEQUENTIAL=1 to disable sequential frame reading
 # Set NO_BATCH=1 to disable batch embedding processing
 # Set BATCH_SIZE=64 to use custom batch size
+# Set MODEL_NAME=senet50_256 to use insightface buffalo_l model (default: vggface2)
 USE_SEQUENTIAL="${NO_SEQUENTIAL:-}"
 USE_BATCH="${NO_BATCH:-}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
+MODEL_NAME="${MODEL_NAME:-vggface2}"
 
 # Get the video name for this array task
 TASK_ID=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$TASK_FILE")
@@ -72,6 +74,7 @@ echo "SLURM Array Job ID: ${SLURM_ARRAY_JOB_ID}"
 echo "SLURM Array Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Processing video: $TASK_ID"
 echo "Mode for 04b: $MODE"
+echo "Embedding model: $MODEL_NAME"
 echo "Node: $(hostname)"
 if [ -z "$USE_SEQUENTIAL" ]; then
     echo "Optimization: Sequential frame reading ENABLED (5-10x faster)"
@@ -98,6 +101,7 @@ if [ -n "$USE_BATCH" ]; then
     CMD+=(--no-batch)
 fi
 CMD+=(--batch-size "$BATCH_SIZE")
+CMD+=(--model-name "$MODEL_NAME")
 
 # Run the full pipeline script
 echo "Starting pipeline execution..."
