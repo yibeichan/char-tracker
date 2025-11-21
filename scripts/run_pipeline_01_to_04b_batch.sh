@@ -33,9 +33,15 @@ micromamba activate friends_char_track
 # source $HOME/miniconda3/etc/profile.d/conda.sh
 # conda activate friends_char_track
 
-# Set up paths dynamically based on script location
-SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPTS_DIR/.." && pwd)"
+# Set up paths - use SLURM_SUBMIT_DIR if available, otherwise use hardcoded path
+if [ -n "$SLURM_SUBMIT_DIR" ]; then
+    # Running via SLURM - derive from submission directory
+    REPO_ROOT="$(cd "$SLURM_SUBMIT_DIR/.." && pwd)"
+else
+    # Running locally - use script location
+    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+SCRIPTS_DIR="$REPO_ROOT/scripts"
 TASK_FILE="$REPO_ROOT/data/episode_id.txt"
 LOG_DIR="$REPO_ROOT/logs"
 
