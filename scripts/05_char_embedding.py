@@ -32,48 +32,70 @@ def extract_episode_number(file_path, season_id):
         print(f"Error extracting episode number from {file_path}: {e}")
         return None
 
-def get_face_embedding(image_path, model, device):
+def get_face_embedding(image_path, model, device, model_name='vggface2', embedding_dim=512):
     """
-    Compute the face embedding of an image using a FaceNet model.
+    Compute the face embedding of an image using a face recognition model.
 
     Parameters
     ----------
     image_path : str
         The path to the image file.
-    model : InceptionResnetV1
-        The FaceNet model to use for computing face embeddings.
+    model : Model
+        The model to use for computing face embeddings.
     device : torch.device
         The device to run the model on.
+    model_name : str
+        Name of the model ('vggface2' or 'senet50_256').
+    embedding_dim : int
+        Dimension of the embedding (512 for vggface2, 256 for senet50_256).
 
     Returns
     -------
     embedding : np.ndarray
-        The 512-dimensional face embedding of the image, or a vector of NaNs if an error occurred.
+        The face embedding of the image, or a vector of NaNs if an error occurred.
     """
     try:
-        face_tensor = load_image(image_path).to(device)
-        with torch.no_grad():
-            embedding = model(face_tensor).cpu().numpy().flatten()
+        face_tensor = load_image(image_path, model_name)
+        if model_name == 'senet50_256':
+            # Convert normalized tensor back to uint8 image for insightface
+            face_img = ((face_tensor * 127.5) + 127.5).astype(np.uint8)
+            faces = model.get(face_img)
+            if len(faces) > 0:
+                embedding = faces[0].normed_embedding
+            else:
+                print(f"Warning: No face detected in {image_path}")
+                embedding = np.zeros(embedding_dim)
+        else:
+            face_tensor = face_tensor.to(device)
+            with torch.no_grad():
+                embedding = model(face_tensor).cpu().numpy().flatten()
         return embedding
     except Exception as e:
-        print(f"Error processing image: {image_path}")
-        return np.full((512,), np.nan)
+        print(f"Error processing image: {image_path}: {e}")
+        return np.full((embedding_dim,), np.nan)
 
-def load_image(image_path):
+def load_image(image_path, model_name='vggface2'):
     """Load an image from disk and convert it to a tensor."""
     image = cv2.imread(image_path)
     if image is None:
         raise ValueError(f"Error loading image: {image_path}")
-    return preprocess_face(image)
+    return preprocess_face(image, model_name)
 
-def preprocess_face(face_image):
+def preprocess_face(face_image, model_name='vggface2'):
     """Preprocess the face image for embedding extraction (resize, normalize, etc.)."""
-    face_image = cv2.resize(face_image, (160, 160))  # Resize to 160x160 pixels if required
-    face_tensor = torch.tensor(face_image).permute(2, 0, 1).float().unsqueeze(0)
-    face_tensor = (face_tensor - 127.5) / 128.0  # Normalize
+    if model_name == 'senet50_256':
+        # insightface SENet50: 112x112, different normalization
+        face_image = cv2.resize(face_image, (112, 112))
+        face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
+        face_tensor = (face_image.astype(np.float32) - 127.5) / 127.5
+    else:
+        # InceptionResnetV1: 160x160
+        face_image = cv2.resize(face_image, (160, 160))
+        face_tensor = torch.tensor(face_image).permute(2, 0, 1).float().unsqueeze(0)
+        face_tensor = (face_tensor - 127.5) / 128.0
     return face_tensor
 
-def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None):
+def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None, model_name='vggface2'):
     """
     Compute face embeddings for all characters in a given range of episodes.
 
@@ -89,6 +111,8 @@ def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None):
         The first episode to process. If not provided, all episodes in the input directory are processed.
     end_episode : int, optional
         The last episode to process. If not provided, all episodes in the input directory are processed.
+    model_name : str, optional
+        The model to use for embeddings ('vggface2' or 'senet50_256').
 
     Notes
     -----
@@ -98,7 +122,16 @@ def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None):
     processes the embeddings for each character.
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = InceptionResnetV1(pretrained='vggface2').eval().to(device)
+
+    if model_name == 'senet50_256':
+        import insightface
+        from insightface.app import FaceAnalysis
+        model = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider' if device.type == 'cuda' else 'CPUExecutionProvider'])
+        model.prepare(ctx_id=0 if device.type == 'cuda' else -1, det_size=(640, 640))
+        embedding_dim = 512  # buffalo_l uses 512-dim embeddings
+    else:
+        model = InceptionResnetV1(pretrained='vggface2').eval().to(device)
+        embedding_dim = 512
     
     if start_episode is None or end_episode is None:
         all_episodes = sorted({extract_episode_number(f, season_id) for f in glob.glob(os.path.join(input_dir, f'friends_{season_id}e*.jpg')) if extract_episode_number(f, season_id) is not None})
@@ -144,7 +177,7 @@ def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None):
             embeddings = []
 
             for img in tqdm(selected_images, desc=f"Processing char_{char_id} embeddings"):
-                embedding = get_face_embedding(img, model, device)
+                embedding = get_face_embedding(img, model, device, model_name, embedding_dim)
                 embeddings.append(embedding)
             
             embeddings = np.array(embeddings)
@@ -159,6 +192,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Extract embeddings for all characters in a season.")
     parser.add_argument("season_id", help="Season ID for processing")
+    parser.add_argument('--model-name', type=str, default='vggface2',
+                       choices=['vggface2', 'senet50_256'],
+                       help='Embedding model to use (default: vggface2)')
     args = parser.parse_args()
 
     season_id = args.season_id
@@ -179,4 +215,4 @@ if __name__ == "__main__":
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    main(input_dir, season_id, save_dir)
+    main(input_dir, season_id, save_dir, model_name=args.model_name)

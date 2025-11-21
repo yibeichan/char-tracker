@@ -80,8 +80,8 @@ def save_json(data, output_file):
         sys.exit(1)
 
 
-def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32, num_workers=0):
-    face_embedder = FaceEmbedder()
+def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32, num_workers=0, model_name='vggface2'):
+    face_embedder = FaceEmbedder(model_name=model_name)
     face_clusterer = FaceClusterer(similarity_threshold=0.6, max_iterations=100)
 
     selected_faces = read_json(face_selection_file)
@@ -115,6 +115,9 @@ if __name__ == "__main__":
                        help='Batch size for embedding extraction (default: 32)')
     parser.add_argument('--num-workers', type=int, default=0,
                        help='Number of data loading workers (default: 0, recommended for CUDA)')
+    parser.add_argument('--model-name', type=str, default='vggface2',
+                       choices=['vggface2', 'senet50_256'],
+                       help='Embedding model to use (default: vggface2)')
 
     args = parser.parse_args()
     video_name = args.video_name
@@ -129,5 +132,6 @@ if __name__ == "__main__":
     main(video_name, face_selection_file, output_dir,
          use_batch=not args.no_batch,
          batch_size=args.batch_size,
-         num_workers=args.num_workers)
+         num_workers=args.num_workers,
+         model_name=args.model_name)
     

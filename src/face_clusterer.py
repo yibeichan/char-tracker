@@ -9,9 +9,42 @@ from facenet_pytorch import InceptionResnetV1
 from torch.utils.data import Dataset, DataLoader
 
 class FaceEmbedder:
-    def __init__(self, model=None, device=None):
+    def __init__(self, model=None, device=None, model_name='vggface2'):
+        """
+        Initialize FaceEmbedder with configurable model.
+
+        Args:
+            model: Pre-initialized model (optional)
+            device: torch.device (optional, auto-detects CUDA)
+            model_name: Model to use. Options:
+                - 'vggface2': InceptionResnetV1 (512-dim, 160x160 input)
+                - 'senet50_256': SENet50 from insightface (256-dim, 112x112 input)
+        """
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = model or InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+        self.model_name = model_name
+
+        if model is not None:
+            self.model = model
+        elif model_name == 'senet50_256':
+            # Use insightface for embeddings
+            import insightface
+            from insightface.app import FaceAnalysis
+            # Use FaceAnalysis with only recognition enabled
+            self.model = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider' if self.device.type == 'cuda' else 'CPUExecutionProvider'])
+            self.model.prepare(ctx_id=0 if self.device.type == 'cuda' else -1, det_size=(640, 640))
+        else:
+            # Default to InceptionResnetV1
+            self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+
+        # Set input size and normalization based on model
+        if model_name == 'senet50_256':
+            self.input_size = (112, 112)
+            self.normalization = lambda x: (x - 127.5) / 127.5
+            self.embedding_dim = 512  # buffalo_l uses 512-dim embeddings
+        else:
+            self.input_size = (160, 160)
+            self.normalization = lambda x: (x - 127.5) / 128.0
+            self.embedding_dim = 512
 
     def load_image(self, image_path):
         """Load an image from disk and convert it to a tensor."""
@@ -25,11 +58,18 @@ class FaceEmbedder:
 
     def preprocess_face(self, face_image):
         """Preprocess the face image for embedding extraction (resize, BGR->RGB, normalize)."""
-        face_image = cv2.resize(face_image, (160, 160))
+        face_image = cv2.resize(face_image, self.input_size)
         face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-        face_tensor = torch.tensor(face_image).permute(2, 0, 1).float().unsqueeze(0).to(self.device)
-        face_tensor = (face_tensor - 127.5) / 128.0
-        return face_tensor
+
+        if self.model_name == 'senet50_256':
+            # insightface expects numpy arrays in RGB format, normalized
+            face_tensor = self.normalization(face_image.astype(np.float32))
+            return face_tensor
+        else:
+            # PyTorch model expects tensor
+            face_tensor = torch.tensor(face_image).permute(2, 0, 1).float().unsqueeze(0).to(self.device)
+            face_tensor = self.normalization(face_tensor)
+            return face_tensor
 
     def get_face_embeddings(self, selected_frames, image_dir):
         """Get embeddings for each cropped face image."""
@@ -43,8 +83,25 @@ class FaceEmbedder:
                     for frame_info in face_data['top_frames']:
                         image_path = os.path.join(image_dir, frame_info['image_path'])  # Construct full path to image
                         face_tensor = self.load_image(image_path)
-                        with torch.no_grad():
-                            embedding = self.model(face_tensor).cpu().numpy()
+
+                        if self.model_name == 'senet50_256':
+                            # insightface expects RGB numpy array (H, W, 3)
+                            # face_tensor is already preprocessed and normalized
+                            # We need to convert back to uint8 [0, 255] for insightface
+                            face_img = ((face_tensor * 127.5) + 127.5).astype(np.uint8)
+                            # Get face features (insightface will detect and extract)
+                            faces = self.model.get(face_img)
+                            if len(faces) > 0:
+                                embedding = faces[0].normed_embedding
+                            else:
+                                # If no face detected, return zeros (should not happen with cropped faces)
+                                print(f"Warning: No face detected in {image_path}")
+                                embedding = np.zeros(self.embedding_dim)
+                        else:
+                            # PyTorch model
+                            with torch.no_grad():
+                                embedding = self.model(face_tensor).cpu().numpy()
+
                         embeddings.append({
                             "frame_idx": frame_info['frame_idx'],
                             "embedding": embedding,
@@ -80,8 +137,13 @@ class FaceEmbedder:
         Returns:
             List of face embeddings with metadata
         """
+        if self.model_name == 'senet50_256':
+            # insightface doesn't support batching in the same way, fall back to sequential
+            print("Note: insightface SENet50 using sequential processing (batch not supported)")
+            return self.get_face_embeddings(selected_frames, image_dir)
+
         # Create dataset and dataloader (preprocessing on CPU)
-        dataset = FaceImageDataset(selected_frames, image_dir)
+        dataset = FaceImageDataset(selected_frames, image_dir, self.input_size, self.normalization)
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
@@ -160,13 +222,17 @@ class FaceImageDataset(Dataset):
     This dataset flattens the hierarchical structure of faces/frames into a single
     list for efficient batch processing.
     """
-    def __init__(self, selected_frames, image_dir):
+    def __init__(self, selected_frames, image_dir, input_size=(160, 160), normalization=None):
         """
         Args:
             selected_frames: Dictionary of selected frames per scene
             image_dir: Directory containing face images
+            input_size: Tuple of (width, height) for resizing
+            normalization: Function to normalize tensors
         """
         self.image_dir = image_dir
+        self.input_size = input_size
+        self.normalization = normalization or (lambda x: (x - 127.5) / 128.0)
 
         # Flatten all image paths with metadata
         self.image_items = []
@@ -198,9 +264,9 @@ class FaceImageDataset(Dataset):
             raise ValueError(f"Error loading image: {item['image_path']}")
 
         # Preprocess on CPU (resize, BGR->RGB, normalize) - GPU transfer happens in main loop
-        face_image = cv2.cvtColor(cv2.resize(image, (160, 160)), cv2.COLOR_BGR2RGB)
+        face_image = cv2.cvtColor(cv2.resize(image, self.input_size), cv2.COLOR_BGR2RGB)
         face_tensor = torch.tensor(face_image).permute(2, 0, 1).float()
-        face_tensor = (face_tensor - 127.5) / 128.0
+        face_tensor = self.normalization(face_tensor)
 
         # Return tensor and metadata (as individual values for proper collation)
         return face_tensor, item['scene_id'], item['unique_face_id'], item['frame_idx'], item['image_path']
