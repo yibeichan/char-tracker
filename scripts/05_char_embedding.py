@@ -45,9 +45,9 @@ def get_face_embedding(image_path, model, device, model_name='vggface2', embeddi
     device : torch.device
         The device to run the model on.
     model_name : str
-        Name of the model ('vggface2' or 'senet50_256').
+        Name of the model ('vggface2' or 'buffalo_l').
     embedding_dim : int
-        Dimension of the embedding (512 for vggface2, 256 for senet50_256).
+        Dimension of the embedding (512 for both models).
 
     Returns
     -------
@@ -56,7 +56,7 @@ def get_face_embedding(image_path, model, device, model_name='vggface2', embeddi
     """
     try:
         face_tensor = load_image(image_path, model_name)
-        if model_name == 'senet50_256':
+        if model_name == 'buffalo_l':
             # Convert normalized tensor back to uint8 image for insightface
             face_img = ((face_tensor * 127.5) + 127.5).astype(np.uint8)
             faces = model.get(face_img)
@@ -83,8 +83,8 @@ def load_image(image_path, model_name='vggface2'):
 
 def preprocess_face(face_image, model_name='vggface2'):
     """Preprocess the face image for embedding extraction (resize, normalize, etc.)."""
-    if model_name == 'senet50_256':
-        # insightface SENet50: 112x112, different normalization
+    if model_name == 'buffalo_l':
+        # insightface buffalo_l: 112x112, different normalization
         face_image = cv2.resize(face_image, (112, 112))
         face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
         face_tensor = (face_image.astype(np.float32) - 127.5) / 127.5
@@ -112,7 +112,7 @@ def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None, m
     end_episode : int, optional
         The last episode to process. If not provided, all episodes in the input directory are processed.
     model_name : str, optional
-        The model to use for embeddings ('vggface2' or 'senet50_256').
+        The model to use for embeddings ('vggface2' or 'buffalo_l').
 
     Notes
     -----
@@ -123,7 +123,7 @@ def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None, m
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    if model_name == 'senet50_256':
+    if model_name == 'buffalo_l':
         import insightface
         from insightface.app import FaceAnalysis
         model = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider' if device.type == 'cuda' else 'CPUExecutionProvider'])
@@ -193,7 +193,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract embeddings for all characters in a season.")
     parser.add_argument("season_id", help="Season ID for processing")
     parser.add_argument('--model-name', type=str, default='vggface2',
-                       choices=['vggface2', 'senet50_256'],
+                       choices=['vggface2', 'buffalo_l'],
                        help='Embedding model to use (default: vggface2)')
     args = parser.parse_args()
 

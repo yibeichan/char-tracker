@@ -116,7 +116,7 @@ if __name__ == "__main__":
     parser.add_argument('--num-workers', type=int, default=0,
                        help='Number of data loading workers (default: 0, recommended for CUDA)')
     parser.add_argument('--model-name', type=str, default='vggface2',
-                       choices=['vggface2', 'senet50_256'],
+                       choices=['vggface2', 'buffalo_l'],
                        help='Embedding model to use (default: vggface2)')
 
     args = parser.parse_args()
@@ -134,4 +134,3 @@ if __name__ == "__main__":
          batch_size=args.batch_size,
          num_workers=args.num_workers,
          model_name=args.model_name)
-    

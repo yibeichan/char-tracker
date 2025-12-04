@@ -18,14 +18,14 @@ class FaceEmbedder:
             device: torch.device (optional, auto-detects CUDA)
             model_name: Model to use. Options:
                 - 'vggface2': InceptionResnetV1 (512-dim, 160x160 input)
-                - 'senet50_256': SENet50 from insightface (256-dim, 112x112 input)
+                - 'buffalo_l': InsightFace buffalo_l with ArcFace (512-dim, 112x112 input)
         """
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_name = model_name
 
         if model is not None:
             self.model = model
-        elif model_name == 'senet50_256':
+        elif model_name == 'buffalo_l':
             # Use insightface for embeddings
             import insightface
             from insightface.app import FaceAnalysis
@@ -37,7 +37,7 @@ class FaceEmbedder:
             self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
 
         # Set input size and normalization based on model
-        if model_name == 'senet50_256':
+        if model_name == 'buffalo_l':
             self.input_size = (112, 112)
             self.normalization = lambda x: (x - 127.5) / 127.5
             self.embedding_dim = 512  # buffalo_l uses 512-dim embeddings
@@ -61,7 +61,7 @@ class FaceEmbedder:
         face_image = cv2.resize(face_image, self.input_size)
         face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
 
-        if self.model_name == 'senet50_256':
+        if self.model_name == 'buffalo_l':
             # insightface expects numpy arrays in RGB format, normalized
             face_tensor = self.normalization(face_image.astype(np.float32))
             return face_tensor
@@ -84,7 +84,7 @@ class FaceEmbedder:
                         image_path = os.path.join(image_dir, frame_info['image_path'])  # Construct full path to image
                         face_tensor = self.load_image(image_path)
 
-                        if self.model_name == 'senet50_256':
+                        if self.model_name == 'buffalo_l':
                             # insightface expects RGB numpy array (H, W, 3)
                             # face_tensor is already preprocessed and normalized
                             # We need to convert back to uint8 [0, 255] for insightface
@@ -137,9 +137,9 @@ class FaceEmbedder:
         Returns:
             List of face embeddings with metadata
         """
-        if self.model_name == 'senet50_256':
+        if self.model_name == 'buffalo_l':
             # insightface doesn't support batching in the same way, fall back to sequential
-            print("Note: insightface SENet50 using sequential processing (batch not supported)")
+            print("Note: insightface buffalo_l using sequential processing (batch not supported)")
             return self.get_face_embeddings(selected_frames, image_dir)
 
         # Create dataset and dataloader (preprocessing on CPU)
