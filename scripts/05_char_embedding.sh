@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --job-name=face_embedding
-#SBATCH --output=/om2/user/yibei/face-track/logs/%x_%j.out 
-#SBATCH --error=/om2/user/yibei/face-track/logs/%x_%j.err 
+#SBATCH --output=/home/yibei/char-tracker/logs/%x_%j.out 
+#SBATCH --error=/home/yibei/char-tracker/logs/%x_%j.err 
 #SBATCH --partition=normal
 #SBATCH --exclude=node[030-070]
 #SBATCH --time=00:15:00 
@@ -13,9 +13,9 @@
 #SBATCH --mail-type=FAIL,END
 #SBATCH --mail-user=yibei@mit.edu
 
-source $HOME/miniconda3/etc/profile.d/conda.sh
-# Activate your Conda environment
-conda activate friends_char_track
+# Activate micromamba environment
+eval "$(micromamba shell hook --shell bash)"
+micromamba activate char-tracker
 
 seasons=("s01" "s02" "s03" "s04" "s05" "s06")
 
@@ -23,5 +23,5 @@ TASK_ID=${seasons[$SLURM_ARRAY_TASK_ID]}
 
 echo "Processing: $TASK_ID"
 
-cd /om2/user/yibei/face-track/scripts
+cd /home/yibei/char-tracker/scripts
 python 05_char_embedding.py "${TASK_ID}"

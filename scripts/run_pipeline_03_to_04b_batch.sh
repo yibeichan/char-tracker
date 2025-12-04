@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --job-name=pipeline_03_04b
-#SBATCH --output=/orcd/home/002/yibei/face-track/logs/%x_%j.out
-#SBATCH --error=/orcd/home/002/yibei/face-track/logs/%x_%j.err
+#SBATCH --output=/home/yibei/char-tracker/logs/%x_%j.out
+#SBATCH --error=/home/yibei/char-tracker/logs/%x_%j.err
 #SBATCH --partition=ou_bcs_low
 #SBATCH --time=00:30:00
 #SBATCH --array=1
@@ -25,14 +25,9 @@
 #   NO_BATCH=1 sbatch run_pipeline_03_to_04b_batch.sh
 #   BATCH_SIZE=64 sbatch run_pipeline_03_to_04b_batch.sh
 
-# Source micromamba (adjust if using conda instead)
-# For micromamba:
+# Activate micromamba environment
 eval "$(micromamba shell hook --shell bash)"
-micromamba activate friends_char_track
-
-# For conda, use instead:
-# source $HOME/miniconda3/etc/profile.d/conda.sh
-# conda activate friends_char_track
+micromamba activate char-tracker
 
 # Set up paths - use SLURM_SUBMIT_DIR if available, otherwise use hardcoded path
 if [ -n "$SLURM_SUBMIT_DIR" ]; then

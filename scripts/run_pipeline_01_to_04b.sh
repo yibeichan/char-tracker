@@ -66,7 +66,7 @@ check_dir_exists() {
 
 # Parse arguments
 if [ $# -lt 1 ]; then
-    log_error "Usage: $0 <video_name> [--mode copy|move|symlink] [--no-sequential] [--no-batch] [--batch-size N] [--model-name vggface2|senet50_256]"
+    log_error "Usage: $0 <video_name> [--mode copy|move|symlink] [--no-sequential] [--no-batch] [--batch-size N] [--model-name vggface2|buffalo_l]"
     exit 1
 fi
 
@@ -115,11 +115,11 @@ while [ $# -gt 0 ]; do
                 log_error "Missing argument for --model-name."
                 exit 1
             fi
-            if [[ "$2" =~ ^(vggface2|senet50_256)$ ]]; then
+            if [[ "$2" =~ ^(vggface2|buffalo_l)$ ]]; then
                 MODEL_NAME="$2"
                 shift 2
             else
-                log_error "Invalid model-name: '$2'. Must be 'vggface2' or 'senet50_256'."
+                log_error "Invalid model-name: '$2'. Must be 'vggface2' or 'buffalo_l'."
                 exit 1
             fi
             ;;
