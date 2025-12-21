@@ -19,7 +19,7 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # Activate micromamba environment
 eval "$(micromamba shell hook --shell bash)"
-micromamba activate char-tracker
+micromamba activate friends_char_track
 
 seasons=("s01" "s02" "s03" "s04" "s05" "s06")
 
