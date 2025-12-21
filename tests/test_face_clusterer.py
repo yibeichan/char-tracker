@@ -141,7 +141,7 @@ class TestFaceEmbedderBuffaloL:
             # Simulate CUDA provider not available
             mock_ort.get_available_providers.return_value = ['CPUExecutionProvider']
 
-            embedder = FaceEmbedder(model_name='buffalo_l')
+            FaceEmbedder(model_name='buffalo_l')
 
             # Verify FaceAnalysis was initialized with CPU provider only
             call_args = mock_insightface.app.FaceAnalysis.call_args
