@@ -1,17 +1,19 @@
 #!/bin/bash
 
 #SBATCH --job-name=pipeline_01_04b
-#SBATCH --output=/orcd/home/002/yibei/face-track/logs/%x_%j.out
-#SBATCH --error=/orcd/home/002/yibei/face-track/logs/%x_%j.err
+#SBATCH --output=./logs/%x_%j.out
+#SBATCH --error=./logs/%x_%j.err
 #SBATCH --partition=ou_bcs_low
-#SBATCH --time=00:45:00
-#SBATCH --array=1
+#SBATCH --time=02:45:00
+#SBATCH --array=6
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:a100:1
 #SBATCH --mem=16G
 #SBATCH --mail-type=FAIL,END
 
 # Full pipeline script (01-04b) for batch processing with SLURM
+# IMPORTANT: Submit SLURM jobs from the project root directory using:
+#   sbatch scripts/run_pipeline_01_to_04b_batch.sh
 # This script runs all 5 steps sequentially for each video in the array
 #
 # With optimizations enabled (default):
@@ -23,20 +25,17 @@
 #   NO_SEQUENTIAL=1 sbatch run_pipeline_01_to_04b_batch.sh
 #   NO_BATCH=1 sbatch run_pipeline_01_to_04b_batch.sh
 #   BATCH_SIZE=64 sbatch run_pipeline_01_to_04b_batch.sh
+#   MODEL_NAME=buffalo_l sbatch run_pipeline_01_to_04b_batch.sh
+#   SIMILARITY_THRESHOLD=0.5 sbatch run_pipeline_01_to_04b_batch.sh
 
-# Source micromamba (adjust if using conda instead)
-# For micromamba:
+# Activate micromamba environment
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate friends_char_track
 
-# For conda, use instead:
-# source $HOME/miniconda3/etc/profile.d/conda.sh
-# conda activate friends_char_track
-
-# Set up paths - use SLURM_SUBMIT_DIR if available, otherwise use hardcoded path
+# Set up paths
 if [ -n "$SLURM_SUBMIT_DIR" ]; then
-    # Running via SLURM - derive from submission directory
-    REPO_ROOT="$(cd "$SLURM_SUBMIT_DIR/.." && pwd)"
+    # Running via SLURM - assume submitted from project root
+    REPO_ROOT="$SLURM_SUBMIT_DIR"
 else
     # Running locally - use script location
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -48,6 +47,12 @@ LOG_DIR="$REPO_ROOT/logs"
 # Ensure log directory exists
 mkdir -p "$LOG_DIR"
 
+# Check if task file exists
+if [ ! -f "$TASK_FILE" ]; then
+    echo "ERROR: Task file not found: $TASK_FILE"
+    exit 1
+fi
+
 # Mode for step 04b: copy, move, or symlink (default: symlink for efficiency)
 MODE="${MODE:-symlink}"
 
@@ -55,9 +60,12 @@ MODE="${MODE:-symlink}"
 # Set NO_SEQUENTIAL=1 to disable sequential frame reading
 # Set NO_BATCH=1 to disable batch embedding processing
 # Set BATCH_SIZE=64 to use custom batch size
+# Set MODEL_NAME=buffalo_l to use InsightFace buffalo_l model (default: vggface2)
 USE_SEQUENTIAL="${NO_SEQUENTIAL:-}"
 USE_BATCH="${NO_BATCH:-}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
+MODEL_NAME="${MODEL_NAME:-buffalo_l}"
+SIMILARITY_THRESHOLD="${SIMILARITY_THRESHOLD:-0.5}"
 
 # Get the video name for this array task
 TASK_ID=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$TASK_FILE")
@@ -72,6 +80,8 @@ echo "SLURM Array Job ID: ${SLURM_ARRAY_JOB_ID}"
 echo "SLURM Array Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Processing video: $TASK_ID"
 echo "Mode for 04b: $MODE"
+echo "Embedding model: $MODEL_NAME"
+echo "Similarity threshold: $SIMILARITY_THRESHOLD"
 echo "Node: $(hostname)"
 if [ -z "$USE_SEQUENTIAL" ]; then
     echo "Optimization: Sequential frame reading ENABLED (5-10x faster)"
@@ -98,6 +108,8 @@ if [ -n "$USE_BATCH" ]; then
     CMD+=(--no-batch)
 fi
 CMD+=(--batch-size "$BATCH_SIZE")
+CMD+=(--model-name "$MODEL_NAME")
+CMD+=(--similarity-threshold "$SIMILARITY_THRESHOLD")
 
 # Run the full pipeline script
 echo "Starting pipeline execution..."

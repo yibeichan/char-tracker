@@ -80,9 +80,10 @@ def save_json(data, output_file):
         sys.exit(1)
 
 
-def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32, num_workers=0):
-    face_embedder = FaceEmbedder()
-    face_clusterer = FaceClusterer(similarity_threshold=0.6, max_iterations=100)
+def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32, num_workers=0, model_name='vggface2', similarity_threshold=0.6, min_scenes=2):
+    face_embedder = FaceEmbedder(model_name=model_name)
+    face_clusterer = FaceClusterer(similarity_threshold=similarity_threshold, max_iterations=100, min_scenes=min_scenes)
+    print(f"Clustering with similarity_threshold={similarity_threshold}, min_scenes={min_scenes}")
 
     selected_faces = read_json(face_selection_file)
     image_dir = os.path.dirname(face_selection_file)
@@ -115,6 +116,15 @@ if __name__ == "__main__":
                        help='Batch size for embedding extraction (default: 32)')
     parser.add_argument('--num-workers', type=int, default=0,
                        help='Number of data loading workers (default: 0, recommended for CUDA)')
+    parser.add_argument('--model-name', type=str, default='vggface2',
+                       choices=['vggface2', 'buffalo_l'],
+                       help='Embedding model to use (default: vggface2)')
+    parser.add_argument('--similarity-threshold', type=float, default=0.6,
+                       help='Cosine similarity threshold for clustering (default: 0.6). Lower values create fewer, larger clusters.')
+    parser.add_argument('--min-scenes', type=int, default=2,
+                       help='Minimum scenes required for a valid cluster (default: 2). '
+                            'Clusters with fewer scenes are merged into nearest valid cluster. '
+                            'Set to 1 to disable cross-scene validation.')
 
     args = parser.parse_args()
     video_name = args.video_name
@@ -129,5 +139,7 @@ if __name__ == "__main__":
     main(video_name, face_selection_file, output_dir,
          use_batch=not args.no_batch,
          batch_size=args.batch_size,
-         num_workers=args.num_workers)
-    
+         num_workers=args.num_workers,
+         model_name=args.model_name,
+         similarity_threshold=args.similarity_threshold,
+         min_scenes=args.min_scenes)
