@@ -9,7 +9,7 @@ from collections import defaultdict
 
 # Add src directory to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from face_clusterer import FaceEmbedder, FaceClusterer
+from face_clusterer import FaceClusterer
 
 # Configure logging
 logging.basicConfig(
@@ -79,11 +79,16 @@ def build_image_to_face_mapping(clustering_data):
                     'full_image_path': img_path
                 }
 
-    # Warn about collisions
+    # Raise error if collisions are found (ensures data integrity)
     if path_collisions:
-        logger.warning(f"Found {len(path_collisions)} filename collisions across clusters")
-        for filename, occurrences in list(path_collisions.items())[:5]:
-            logger.warning(f"  {filename}: appears in {len(occurrences) + 1} clusters")
+        error_msg = [f"Found {len(path_collisions)} filename collisions across clusters."]
+        error_msg.append("This causes ambiguous constraint mapping and must be resolved.")
+        error_msg.append("\nCollisions:")
+        for filename, occurrences in list(path_collisions.items())[:10]:
+            cluster_info = ", ".join([f"cluster_{c}" for _, c, _ in occurrences])
+            error_msg.append(f"  {filename}: appears in clusters {cluster_info}")
+        error_msg.append("\nPlease ensure all image filenames are unique across clusters/scenes.")
+        raise ValueError("\n".join(error_msg))
 
     return mapping
 
@@ -267,19 +272,26 @@ def apply_constraints_to_clustering(clustering_data, constraints, image_mapping)
         for face_a, face_b, cluster_id in violations:
             violations_by_cluster[cluster_id].append((face_a, face_b))
 
-        # For each violated cluster, move one of the faces to a new cluster
+        # For each violated cluster, move all conflicting faces to ONE new cluster
         for cluster_id, violation_pairs in violations_by_cluster.items():
-            # Collect all faces that need to be separated
-            faces_to_separate = set()
-            for face_a, face_b in violation_pairs:
-                faces_to_separate.add(face_b)  # Move face_b to new cluster
+            # Collect all faces that need to be separated from this cluster
+            faces_to_move = set()
+            for _, face_b in violation_pairs:
+                # Only move faces if they are still in the cluster being violated
+                if face_to_cluster.get(face_b) == cluster_id:
+                    faces_to_move.add(face_b)
 
-            # Create new clusters for separated faces
-            for face_id in faces_to_separate:
-                face_to_cluster[face_id] = next_cluster_id
-                cluster_mapping[cluster_id] = next_cluster_id  # Record the split
-                next_cluster_id += 1
-                splits_performed += 1
+            if not faces_to_move:
+                continue
+
+            # Create ONE new cluster for all faces being moved out of the current cluster
+            new_cluster_id = next_cluster_id
+            for face_id in faces_to_move:
+                face_to_cluster[face_id] = new_cluster_id
+
+            next_cluster_id += 1
+            splits_performed += 1
+            logger.debug(f"Split cluster {cluster_id}: moved {len(faces_to_move)} faces to cluster {new_cluster_id}")
 
         logger.info(f"Performed {splits_performed} cluster splits to resolve violations")
 

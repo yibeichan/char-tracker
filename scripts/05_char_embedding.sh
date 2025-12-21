@@ -1,13 +1,17 @@
 #!/bin/bash
 
+# Determine project root dynamically
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+
 #SBATCH --job-name=face_embedding
-#SBATCH --output=/home/yibei/char-tracker/logs/%x_%j.out 
-#SBATCH --error=/home/yibei/char-tracker/logs/%x_%j.err 
+#SBATCH --output=${PROJECT_ROOT}/logs/%x_%j.out
+#SBATCH --error=${PROJECT_ROOT}/logs/%x_%j.err
 #SBATCH --partition=normal
 #SBATCH --exclude=node[030-070]
-#SBATCH --time=00:15:00 
+#SBATCH --time=00:15:00
 #SBATCH --array=0-5
-#SBATCH --ntasks=1 
+#SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --mem=1G
 #SBATCH --mail-type=FAIL,END
@@ -23,5 +27,5 @@ TASK_ID=${seasons[$SLURM_ARRAY_TASK_ID]}
 
 echo "Processing: $TASK_ID"
 
-cd /home/yibei/char-tracker/scripts
+cd "${PROJECT_ROOT}/scripts"
 python 05_char_embedding.py "${TASK_ID}"

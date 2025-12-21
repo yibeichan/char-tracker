@@ -57,14 +57,15 @@ def get_face_embedding(image_path, model, device, model_name='vggface2', embeddi
     try:
         face_tensor = load_image(image_path, model_name)
         if model_name == 'buffalo_l':
-            # Convert normalized tensor back to uint8 image for insightface
-            face_img = ((face_tensor * 127.5) + 127.5).astype(np.uint8)
-            faces = model.get(face_img)
+            # face_tensor is already preprocessed (resized, BGR, uint8)
+            # Pass directly to InsightFace (handles normalization internally)
+            faces = model.get(face_tensor)
             if len(faces) > 0:
                 embedding = faces[0].normed_embedding
             else:
                 print(f"Warning: No face detected in {image_path}")
-                embedding = np.zeros(embedding_dim)
+                # Return NaN instead of zeros (consistent with exception handling, prevents similarity contamination)
+                embedding = np.full((embedding_dim,), np.nan)
         else:
             face_tensor = face_tensor.to(device)
             with torch.no_grad():
@@ -82,18 +83,20 @@ def load_image(image_path, model_name='vggface2'):
     return preprocess_face(image, model_name)
 
 def preprocess_face(face_image, model_name='vggface2'):
-    """Preprocess the face image for embedding extraction (resize, normalize, etc.)."""
+    """Preprocess the face image for embedding extraction (resize, color conversion, normalize)."""
     if model_name == 'buffalo_l':
-        # insightface buffalo_l: 112x112, different normalization
+        # insightface buffalo_l: 112x112, BGR format (cv2.imread native format)
+        # Just resize - InsightFace handles normalization internally
         face_image = cv2.resize(face_image, (112, 112))
-        face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-        face_tensor = (face_image.astype(np.float32) - 127.5) / 127.5
+        return face_image  # Return uint8 BGR image directly
     else:
-        # InceptionResnetV1: 160x160
+        # InceptionResnetV1: 160x160, expects RGB
         face_image = cv2.resize(face_image, (160, 160))
+        # Convert BGR to RGB for PyTorch model
+        face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
         face_tensor = torch.tensor(face_image).permute(2, 0, 1).float().unsqueeze(0)
         face_tensor = (face_tensor - 127.5) / 128.0
-    return face_tensor
+        return face_tensor
 
 def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None, model_name='vggface2'):
     """
@@ -126,8 +129,26 @@ def main(input_dir, season_id, save_dir, start_episode=None, end_episode=None, m
     if model_name == 'buffalo_l':
         import insightface
         from insightface.app import FaceAnalysis
-        model = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider' if device.type == 'cuda' else 'CPUExecutionProvider'])
-        model.prepare(ctx_id=0 if device.type == 'cuda' else -1, det_size=(640, 640))
+
+        # Determine available providers with graceful fallback
+        if device.type == 'cuda':
+            try:
+                import onnxruntime as ort
+                available_providers = ort.get_available_providers()
+                if 'CUDAExecutionProvider' in available_providers:
+                    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                else:
+                    print("Warning: CUDA requested but CUDAExecutionProvider not available. "
+                          "Falling back to CPU. Install onnxruntime-gpu for GPU acceleration.")
+                    providers = ['CPUExecutionProvider']
+            except ImportError:
+                providers = ['CPUExecutionProvider']
+        else:
+            providers = ['CPUExecutionProvider']
+
+        model = FaceAnalysis(name='buffalo_l', providers=providers)
+        model.prepare(ctx_id=0 if device.type == 'cuda' and 'CUDAExecutionProvider' in providers else -1,
+                     det_size=(640, 640))
         embedding_dim = 512  # buffalo_l uses 512-dim embeddings
     else:
         model = InceptionResnetV1(pretrained='vggface2').eval().to(device)

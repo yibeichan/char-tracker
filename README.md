@@ -1,4 +1,4 @@
-# face-track
+# char-tracker
 
 A comprehensive video face tracking and clustering pipeline for analyzing character appearances in video content.
 
@@ -54,16 +54,10 @@ MODE=copy sbatch run_pipeline_01_to_04b_batch.sh
 
 **Resource Allocation:**
 - **Time**: 8 hours per video
-- **Memory**: 16 GB (required for face detection step)
+- **Memory**: 4 GB (required for face detection step)
 - **GPU**: 1 GPU per job
 - **Array**: Processes videos listed in `data/episode_id.txt`
 
-**Configuration:**
-Before running, update in `run_pipeline_01_to_04b_batch.sh`:
-- `--mail-user`: Your email address (line 14)
-- `--array`: Number of videos to process (line 9, e.g., `1-292`)
-- `--partition`: SLURM partition name if different from `normal` (line 6)
-- Ensure `data/episode_id.txt` exists with one video name per line
 
 **Note:** Log files are automatically created in `logs/` directory at the repository root.
 
@@ -81,7 +75,7 @@ sbatch 04_face_clustering.sh
 ## Prerequisites
 
 1. **Environment Setup:**
-   - Conda environment named `face-track`
+   - midromamba environment named `char-tracker`
    - Required packages specified in `env.yaml`
 
 2. **Environment Variables:**

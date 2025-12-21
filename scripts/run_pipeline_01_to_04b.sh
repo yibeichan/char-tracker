@@ -76,6 +76,7 @@ NO_SEQUENTIAL=""  # Empty = use sequential (optimized)
 NO_BATCH=""  # Empty = use batch processing (optimized)
 BATCH_SIZE="32"  # Default batch size
 MODEL_NAME="vggface2"  # Default embedding model
+SIMILARITY_THRESHOLD="0.5"  # Default similarity threshold for clustering
 
 # Parse optional arguments
 shift
@@ -123,6 +124,14 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             ;;
+        --similarity-threshold)
+            if [ $# -lt 2 ]; then
+                log_error "Missing argument for --similarity-threshold."
+                exit 1
+            fi
+            SIMILARITY_THRESHOLD="$2"
+            shift 2
+            ;;
         *)
             log_error "Unknown argument: $1"
             exit 1
@@ -154,6 +163,7 @@ log_info "SCRATCH_DIR: $SCRATCH_DIR"
 log_info "Video name: $VIDEO_NAME"
 log_info "Mode for 04b: $MODE"
 log_info "Embedding model: $MODEL_NAME"
+log_info "Similarity threshold: $SIMILARITY_THRESHOLD"
 if [ -z "$NO_SEQUENTIAL" ]; then
     log_info "Step 03: Sequential frame reading ENABLED (5-10x faster)"
 else
@@ -258,6 +268,7 @@ if [ -n "$NO_BATCH" ]; then
 fi
 cmd_step04+=("--batch-size" "$BATCH_SIZE")
 cmd_step04+=("--model-name" "$MODEL_NAME")
+cmd_step04+=("--similarity-threshold" "$SIMILARITY_THRESHOLD")
 "${cmd_step04[@]}"
 
 # Validate output

@@ -51,9 +51,11 @@ MODE="${MODE:-symlink}"
 # Set NO_SEQUENTIAL=1 to disable sequential frame reading
 # Set NO_BATCH=1 to disable batch embedding processing
 # Set BATCH_SIZE=64 to use custom batch size
+# Set MODEL_NAME=buffalo_l to use InsightFace buffalo_l model
 USE_SEQUENTIAL="${NO_SEQUENTIAL:-}"
 USE_BATCH="${NO_BATCH:-}"
 BATCH_SIZE="${BATCH_SIZE:-32}"
+MODEL_NAME="${MODEL_NAME:-vggface2}"
 
 # Get the video name for this array task
 TASK_ID=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$TASK_FILE")
@@ -79,6 +81,7 @@ if [ -z "$USE_BATCH" ]; then
 else
     echo "Optimization: Batch embeddings DISABLED"
 fi
+echo "Embedding model: $MODEL_NAME"
 echo "=========================================="
 echo ""
 
@@ -94,6 +97,7 @@ if [ -n "$USE_BATCH" ]; then
     CMD+=(--no-batch)
 fi
 CMD+=(--batch-size "$BATCH_SIZE")
+CMD+=(--model-name "$MODEL_NAME")
 
 # Run the partial pipeline script (03-04b)
 echo "Starting partial pipeline execution (steps 03-04b)..."
