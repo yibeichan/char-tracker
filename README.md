@@ -75,7 +75,7 @@ sbatch 04_face_clustering.sh
 ## Prerequisites
 
 1. **Environment Setup:**
-   - midromamba environment named `char-tracker`
+   - micromamba environment named `char-tracker`
    - Required packages specified in `env.yaml`
 
 2. **Environment Variables:**
