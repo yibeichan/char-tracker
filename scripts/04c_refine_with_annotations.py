@@ -9,7 +9,6 @@ from collections import defaultdict
 
 # Add src directory to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from face_clusterer import FaceClusterer
 
 # Configure logging
 logging.basicConfig(
