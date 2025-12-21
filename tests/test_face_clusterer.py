@@ -152,7 +152,7 @@ class TestFaceEmbedderBuffaloL:
         """Test that buffalo_l uses CUDA provider when available."""
         import torch
         with patch('face_clusterer.torch.cuda.is_available', return_value=True):
-            embedder = FaceEmbedder(model_name='buffalo_l')
+            FaceEmbedder(model_name='buffalo_l')
 
             # Verify FaceAnalysis was initialized with CUDA provider
             call_args = mock_insightface.app.FaceAnalysis.call_args
