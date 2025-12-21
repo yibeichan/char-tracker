@@ -108,7 +108,11 @@ class FaceEmbedder:
                             # face_tensor is already preprocessed (resized to 112x112, BGR, uint8)
                             # Use recognition model directly to bypass face detection
                             # (FaceAnalysis.get() runs detection which fails on pre-cropped faces)
-                            embedding = self.rec_model.get_feat(face_tensor).flatten()
+                            try:
+                                embedding = self.rec_model.get_feat(face_tensor).flatten()
+                            except Exception:
+                                # On failure, return NaN embeddings (consistent with vggface2 handling)
+                                embedding = np.full((512,), np.nan, dtype=np.float32)
                         else:
                             # PyTorch model
                             with torch.no_grad():
