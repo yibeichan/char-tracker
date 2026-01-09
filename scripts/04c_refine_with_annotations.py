@@ -581,7 +581,7 @@ def main(episode_id, annotation_file, scratch_dir):
 
     logger.info(f"\n✓ Refined clustering saved to: {output_file}")
     logger.info("\nNext step:")
-    logger.info(f"  python ./scripts/08_generate_character_timestamps.py {episode_id}")
+    logger.info(f"  python ./scripts/08_generate_character_timestamps.py {episode_id} {annotation_file}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
