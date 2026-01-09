@@ -4,8 +4,8 @@
 #SBATCH --output=./logs/%x_%j.out
 #SBATCH --error=./logs/%x_%j.err
 #SBATCH --partition=ou_bcs_low
-#SBATCH --time=02:30:00
-#SBATCH --array=23,43,52,73,94,103,118,137,152,173,190,197,218,237,252,267,288
+#SBATCH --time=04:00:00
+#SBATCH --array=23,43,73
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:a100:1
 #SBATCH --mem=4G
@@ -64,6 +64,9 @@
 #   267 = friends_s06e13a
 #   288 = friends_s06e23b
 # ============================================================================
+
+# Load cuDNN module for onnxruntime-gpu (required for libcudnn.so.9)
+module load cudnn/9.8.0.87-cuda12
 
 # Activate micromamba environment
 eval "$(micromamba shell hook --shell bash)"

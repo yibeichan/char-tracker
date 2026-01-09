@@ -138,27 +138,55 @@ def create_zip_file(episode_output_dir, video_name):
 
     print(f"\nCreating zip file: {zip_path}")
 
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        # Walk through the episode directory
-        for root, dirs, files in os.walk(episode_output_dir):
-            for file in files:
-                file_path = os.path.join(root, file)
-                # Calculate the archive name (relative path from episode_output_dir)
-                # This puts cluster folders directly at the zip root
-                arcname = os.path.relpath(file_path, episode_output_dir)
-                zipf.write(file_path, arcname)
+    try:
+        files_added = 0
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Walk through the episode directory
+            for root, dirs, files in os.walk(episode_output_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    
+                    # Calculate the archive name (relative path from episode_output_dir)
+                    # This puts cluster folders directly at the zip root
+                    arcname = os.path.relpath(file_path, episode_output_dir)
+                    
+                    try:
+                        # If file_path is a symlink, resolve it to the actual file
+                        if os.path.islink(file_path):
+                            # Get the real path (following symlinks)
+                            real_path = os.path.realpath(file_path)
+                            if not os.path.exists(real_path):
+                                print(f"Warning: Broken symlink, skipping: {file_path} -> {real_path}")
+                                continue
+                            # Add the real file to the zip with the desired archive name
+                            zipf.write(real_path, arcname)
+                        else:
+                            # Regular file, add directly
+                            zipf.write(file_path, arcname)
+                        
+                        files_added += 1
+                    except Exception as e:
+                        print(f"Warning: Failed to add {file_path} to zip: {e}")
+                        continue
 
-        # Get list of cluster directories for summary
-        cluster_dirs = [d for d in os.listdir(episode_output_dir)
-                       if os.path.isdir(os.path.join(episode_output_dir, d))]
+            # Get list of cluster directories for summary
+            cluster_dirs = [d for d in os.listdir(episode_output_dir)
+                           if os.path.isdir(os.path.join(episode_output_dir, d))]
 
-    zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # Size in MB
-    print(f"Zip file created successfully!")
-    print(f"  - Path: {zip_path}")
-    print(f"  - Size: {zip_size:.2f} MB")
-    print(f"  - Contains {len(cluster_dirs)} cluster directories")
+        zip_size = os.path.getsize(zip_path) / (1024 * 1024)  # Size in MB
+        print(f"Zip file created successfully!")
+        print(f"  - Path: {zip_path}")
+        print(f"  - Size: {zip_size:.2f} MB")
+        print(f"  - Contains {len(cluster_dirs)} cluster directories")
+        print(f"  - Added {files_added} files to zip")
 
-    return zip_path
+        return zip_path
+    
+    except Exception as e:
+        print(f"ERROR: Failed to create zip file: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 def main(video_name, scratch_dir, mode, create_zip):
     matched_faces_file = os.path.join(scratch_dir, "output", "face_clustering",
