@@ -230,7 +230,6 @@ def smooth_tracks(
         return {}
 
     smoothed = second_to_chars.copy()
-    max_gap_frames = int(max_gap_sec * fps)
 
     for char in MAIN_CHARACTERS:
         # Find all seconds where this character appears

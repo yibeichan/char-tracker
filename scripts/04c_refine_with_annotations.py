@@ -226,9 +226,9 @@ def extract_constraints_from_annotations(annotations, image_mapping):
     # Collect all valid labels (including dk as a special case)
     valid_labels = list(label_to_faces.keys())
 
-    # For cannot-link, we need to handle dk specially
-    # dk faces should have cannot-link with named characters, but only within same track
-    # to avoid over-constraining
+    # Note: dk faces do NOT participate in cannot-link constraints
+    # They only get must-link constraints within the same track (applied earlier)
+    # This avoids incorrectly constraining dk faces with named characters
 
     for i in range(len(valid_labels)):
         for j in range(i + 1, len(valid_labels)):
