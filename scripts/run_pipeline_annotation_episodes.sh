@@ -176,6 +176,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "2. Create ZIP for ClusterMark upload"
     echo "3. Annotate clusters and export JSON"
     echo "4. Run: python scripts/04c_refine_with_annotations.py $TASK_ID <annotation.json>"
+    echo "5. Run: python scripts/08_generate_character_timestamps.py $TASK_ID <annotation.json>"
     echo "=========================================="
 else
     echo ""

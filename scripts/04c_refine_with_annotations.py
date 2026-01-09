@@ -42,6 +42,34 @@ def save_json(data, output_file):
     with open(output_file, 'w') as f:
         json.dump(data, f, indent=4, default=convert_np)
 
+def extract_track_from_filename(filename):
+    """
+    Extract track identifier from filename.
+
+    Supports two formats:
+    - scene_X_face_Y_frame_Z.jpg (tracking output)
+    - scene_X_track_Y_frame_Z.jpg (annotation format)
+
+    Args:
+        filename: Image filename (basename or full path)
+
+    Returns:
+        tuple: (scene_id, track_id) or (None, None) if not parseable
+    """
+    basename = os.path.basename(filename)
+    # Remove extension
+    name_without_ext = os.path.splitext(basename)[0]
+
+    # Parse format: scene_X_(face|track)_Y_frame_Z
+    parts = name_without_ext.split('_')
+
+    if len(parts) >= 4 and parts[0] == 'scene':
+        # parts[0] = 'scene', parts[1] = scene number, parts[2] = 'face' or 'track', parts[3] = track number
+        if parts[2] in ('face', 'track') and parts[3].isdigit():
+            return parts[1], parts[3]
+
+    return None, None
+
 def build_image_to_face_mapping(clustering_data):
     """
     Build mapping from image_path to face metadata.
@@ -95,6 +123,10 @@ def extract_constraints_from_annotations(annotations, image_mapping):
     """
     Convert cluster-level annotations into pairwise must-link/cannot-link constraints.
 
+    Key changes for "dk" (don't know) labels:
+    - "dk" faces only get must-link constraints within the same track
+    - Named characters get cross-track must-link constraints
+
     Args:
         annotations: Annotation JSON from ClusterMark
         image_mapping: Mapping from build_image_to_face_mapping()
@@ -107,13 +139,17 @@ def extract_constraints_from_annotations(annotations, image_mapping):
 
     # Group faces by assigned label
     label_to_faces = defaultdict(list)
+    track_to_dk_faces = defaultdict(list)  # (scene_id, track_id) -> [face_ids]
     unmatched_images = []
+
+    # Labels to skip entirely
+    skip_labels = ['not_human', 'background', 'unclear', 'junk', 'not face', 'not clear']
 
     for cluster_id, cluster_info in annotations['cluster_annotations'].items():
         label = cluster_info['label']
 
         # Skip non-human clusters
-        if label in ['not_human', 'background', 'unclear', 'junk']:
+        if label in skip_labels:
             continue
 
         # Add main cluster images
@@ -121,7 +157,18 @@ def extract_constraints_from_annotations(annotations, image_mapping):
             filename = os.path.basename(img_path)
             if filename in image_mapping:
                 face_id = image_mapping[filename]['unique_face_id']
-                label_to_faces[label].append(face_id)
+
+                if label == 'dk':
+                    # For dk, group by track only
+                    scene_id, track_id = extract_track_from_filename(filename)
+                    if scene_id and track_id:
+                        track_key = (scene_id, track_id)
+                        track_to_dk_faces[track_key].append(face_id)
+                    else:
+                        logger.debug(f"Could not extract track from {filename}, skipping dk face")
+                else:
+                    # For named characters, group by label (cross-track linking)
+                    label_to_faces[label].append(face_id)
             else:
                 unmatched_images.append(filename)
 
@@ -133,7 +180,16 @@ def extract_constraints_from_annotations(annotations, image_mapping):
 
             if filename in image_mapping:
                 face_id = image_mapping[filename]['unique_face_id']
-                label_to_faces[outlier_label].append(face_id)
+
+                if outlier_label == 'dk':
+                    scene_id, track_id = extract_track_from_filename(filename)
+                    if scene_id and track_id:
+                        track_key = (scene_id, track_id)
+                        track_to_dk_faces[track_key].append(face_id)
+                    else:
+                        logger.debug(f"Could not extract track from {filename}, skipping dk face")
+                elif outlier_label not in skip_labels:
+                    label_to_faces[outlier_label].append(face_id)
             else:
                 unmatched_images.append(filename)
 
@@ -142,26 +198,48 @@ def extract_constraints_from_annotations(annotations, image_mapping):
         logger.warning(f"Found {len(unmatched_images)} unmatched images in annotations")
         logger.warning(f"First few: {unmatched_images[:5]}")
 
-    # Generate must-link constraints (same label)
+    # Generate must-link constraints for named characters (cross-track)
+    main_char_constraints = 0
     for label, face_ids in label_to_faces.items():
         unique_faces = list(set(face_ids))
         for i in range(len(unique_faces)):
             for j in range(i + 1, len(unique_faces)):
                 must_link.append((unique_faces[i], unique_faces[j]))
+                main_char_constraints += 1
+
+    # Generate must-link constraints for dk faces (within-track only)
+    dk_constraints = 0
+    dk_tracks_with_constraints = 0
+    for track_key, face_ids in track_to_dk_faces.items():
+        unique_faces = list(set(face_ids))
+        if len(unique_faces) > 1:
+            dk_tracks_with_constraints += 1
+            for i in range(len(unique_faces)):
+                for j in range(i + 1, len(unique_faces)):
+                    must_link.append((unique_faces[i], unique_faces[j]))
+                    dk_constraints += 1
+
+    logger.info(f"Generated {main_char_constraints} must-link constraints for named characters")
+    logger.info(f"Generated {dk_constraints} must-link constraints for dk faces within {dk_tracks_with_constraints} tracks")
 
     # Generate cannot-link constraints (different labels)
-    labels = list(label_to_faces.keys())
-    for i in range(len(labels)):
-        for j in range(i + 1, len(labels)):
-            faces_a = label_to_faces[labels[i]]
-            faces_b = label_to_faces[labels[j]]
+    # Collect all valid labels (including dk as a special case)
+    valid_labels = list(label_to_faces.keys())
+
+    # For cannot-link, we need to handle dk specially
+    # dk faces should have cannot-link with named characters, but only within same track
+    # to avoid over-constraining
+
+    for i in range(len(valid_labels)):
+        for j in range(i + 1, len(valid_labels)):
+            faces_a = label_to_faces[valid_labels[i]]
+            faces_b = label_to_faces[valid_labels[j]]
 
             # Sample a few cannot-link pairs (don't need all combinations)
             for face_a in faces_a[:MAX_CANNOT_LINK_SAMPLES]:
                 for face_b in faces_b[:MAX_CANNOT_LINK_SAMPLES]:
                     cannot_link.append((face_a, face_b))
 
-    logger.info(f"Generated {len(must_link)} must-link constraints")
     logger.info(f"Generated {len(cannot_link)} cannot-link constraints")
 
     return {'must_link': must_link, 'cannot_link': cannot_link}
@@ -379,6 +457,43 @@ def validate_constraints(refined_clustering, constraints):
         'cannot_link_violated': cannot_link_violated
     }
 
+def validate_track_integrity(refined_clustering):
+    """
+    Validate that all faces from the same track (unique_face_id) are in the same cluster.
+
+    This should always be true by construction since the refinement operates at the
+    track level (unique_face_id), but this provides an explicit safety check.
+
+    Args:
+        refined_clustering: Refined clustering data
+
+    Returns:
+        dict: Validation result with 'valid' boolean and any violations found
+    """
+    # Build mapping from unique_face_id to cluster_id
+    track_to_cluster = {}
+
+    for scene_id, faces in refined_clustering.items():
+        for face_data in faces:
+            unique_face_id = face_data['unique_face_id']
+            cluster_id = face_data['cluster_id']
+
+            if unique_face_id in track_to_cluster:
+                if track_to_cluster[unique_face_id] != cluster_id:
+                    return {
+                        'valid': False,
+                        'violations': [
+                            {
+                                'track': unique_face_id,
+                                'clusters': [track_to_cluster[unique_face_id], cluster_id]
+                            }
+                        ]
+                    }
+            else:
+                track_to_cluster[unique_face_id] = cluster_id
+
+    return {'valid': True, 'violations': [], 'total_tracks': len(track_to_cluster)}
+
 def main(episode_id, annotation_file, scratch_dir):
     """
     Refine clustering using annotations from ClusterMark.
@@ -430,6 +545,15 @@ def main(episode_id, annotation_file, scratch_dir):
     logger.info("Validating constraint satisfaction...")
     validation = validate_constraints(refined_clustering, constraints)
 
+    # Validate track integrity
+    logger.info("Validating track integrity...")
+    track_validation = validate_track_integrity(refined_clustering)
+    if not track_validation['valid']:
+        logger.error("Track integrity validation failed!")
+        logger.error(f"Violations: {track_validation['violations']}")
+        raise ValueError("Track integrity violation detected - this should never happen")
+    logger.info(f"✓ Track integrity validated for {track_validation['total_tracks']} tracks")
+
     # Save refined clustering
     output_file = os.path.join(
         scratch_dir, "output", "face_clustering",
@@ -457,9 +581,9 @@ def main(episode_id, annotation_file, scratch_dir):
 
     logger.info(f"\n✓ Refined clustering saved to: {output_file}")
     logger.info("\nNext steps:")
-    logger.info("1. Run 04b_reorganize_by_cluster.py to reorganize refined clusters")
+    logger.info("1. Run 04b_reorganize_by_cluster.py to reorganize refined clusters (optional)")
     logger.info("2. Review cluster images to verify improvements")
-    logger.info("3. Run 06_cluster_face_match.py with the refined clustering")
+    logger.info("3. Run 08_generate_character_timestamps.py to generate per-second character presence")
     logger.info("4. Annotate more episodes to build training data for metric learning (Phase 2)")
 
 if __name__ == "__main__":
