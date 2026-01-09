@@ -580,11 +580,8 @@ def main(episode_id, annotation_file, scratch_dir):
     logger.info("=" * 70)
 
     logger.info(f"\n✓ Refined clustering saved to: {output_file}")
-    logger.info("\nNext steps:")
-    logger.info("1. Run 04b_reorganize_by_cluster.py to reorganize refined clusters (optional)")
-    logger.info("2. Review cluster images to verify improvements")
-    logger.info("3. Run 08_generate_character_timestamps.py to generate per-second character presence")
-    logger.info("4. Annotate more episodes to build training data for metric learning (Phase 2)")
+    logger.info("\nNext step:")
+    logger.info(f"  python ./scripts/08_generate_character_timestamps.py {episode_id}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
