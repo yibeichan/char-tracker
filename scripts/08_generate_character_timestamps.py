@@ -72,7 +72,10 @@ def build_cluster_to_character_mapping(annotations: dict) -> Dict[int, str]:
     """
     cluster_to_char = {}
 
-    for cluster_key, cluster_info in annotations['cluster_annotations'].items():
+    # Handle both ClusterMark format and direct format
+    cluster_annotations = annotations.get('cluster_annotations', annotations)
+
+    for cluster_key, cluster_info in cluster_annotations.items():
         label = cluster_info['label'].lower()
 
         # Skip non-main-character labels
@@ -327,20 +330,35 @@ def get_video_fps(video_path: str) -> float:
     return fps
 
 
-def main(episode_id: str, annotation_file: str, scratch_dir: str,
+def main(episode_id: str, annotation_file: str | None, scratch_dir: str,
          max_gap_sec: float = 1.0):
     """
     Generate per-second character presence timestamps.
 
     Args:
         episode_id: Episode identifier (e.g., 'friends_s01e03b')
-        annotation_file: Path to annotation JSON
+        annotation_file: Path to annotation JSON (auto-detected if None)
         scratch_dir: SCRATCH_DIR from environment
         max_gap_sec: Maximum gap (seconds) for track smoothing
     """
     logger.info(f"=" * 70)
     logger.info(f"Generating Character Timestamps for {episode_id}")
     logger.info(f"=" * 70)
+
+    # Auto-detect annotation file if not provided
+    if annotation_file is None:
+        # Look for ClusterMark annotation file (not the refined JSON)
+        annotation_file = os.path.join(
+            scratch_dir, "output", "face_clustering",
+            f"{episode_id}_matched_faces_with_clusters_refined.json"
+        )
+        if not os.path.exists(annotation_file):
+            # Fallback to non-refined version
+            annotation_file = os.path.join(
+                scratch_dir, "output", "face_clustering",
+                f"{episode_id}_matched_faces_with_clusters.json"
+            )
+        logger.info(f"Auto-detected annotation file: {annotation_file}")
 
     # Load annotations
     logger.info(f"Loading annotations from: {annotation_file}")
@@ -363,6 +381,21 @@ def main(episode_id: str, annotation_file: str, scratch_dir: str,
     )
     logger.info(f"Loading refined clustering from: {refined_clustering_file}")
     refined_clustering = read_json(refined_clustering_file)
+
+    # Handle new refined JSON format that has both cluster_annotations and scene data
+    # If it's the new format, use the same file for clustering (it already contains both)
+    # If annotation_file is the same as refined_clustering_file, skip reloading
+    if annotation_file == refined_clustering_file:
+        logger.info("Using refined JSON for both annotations and clustering data")
+        # The annotations variable already has cluster_annotations
+        # Extract scene data from refined_clustering (skip metadata keys)
+        clustering_data = {}
+        for key, value in refined_clustering.items():
+            if key not in ('metadata', 'cluster_annotations', 'data'):
+                clustering_data[key] = value
+            elif key == 'data':
+                clustering_data.update(value)
+        refined_clustering = clustering_data
 
     # Build track-to-character mapping
     track_to_char = build_track_to_character_mapping(refined_clustering, cluster_to_char)
@@ -427,8 +460,8 @@ if __name__ == "__main__":
     )
     parser.add_argument('episode_id', type=str,
                        help='Episode ID (e.g., friends_s01e03b)')
-    parser.add_argument('annotation_file', type=str,
-                       help='Path to annotation JSON from ClusterMark')
+    parser.add_argument('annotation_file', type=str, nargs='?',
+                       help='Path to annotation JSON (auto-detected if not provided)')
     parser.add_argument('--max-gap', type=float, default=1.0,
                        help='Maximum gap (seconds) for track smoothing (default: 1.0)')
     parser.add_argument('--log-level', type=str, default='INFO',
