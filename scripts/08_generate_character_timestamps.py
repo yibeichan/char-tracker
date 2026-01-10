@@ -21,7 +21,7 @@ import json
 import argparse
 import logging
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Optional
 
 import pandas as pd
 import cv2
@@ -37,13 +37,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Main characters in Friends
-MAIN_CHARACTERS = ['rachel', 'monica', 'chandler', 'joey', 'phoebe', 'ross']
+# Import shared constants
+from constants import MAIN_CHARACTERS, SKIP_LABELS
 
-# Labels to skip (not main characters)
-SKIP_LABELS = ['dk', 'not_human', 'background', 'unclear', 'junk',
-               'not face', 'not clear', 'guest', 'guy on the wheelchair',
-               'kid in the hospital', 'random kid']
+# Sorted list for consistent ordering (e.g., CSV columns)
+MAIN_CHARACTERS_LIST = sorted(MAIN_CHARACTERS)
 
 
 def read_json(file_path: str) -> dict:
@@ -287,7 +285,7 @@ def save_timestamps(
     json_data = {
         'metadata': {
             'episode_id': episode_id,
-            'main_characters': MAIN_CHARACTERS,
+            'main_characters': MAIN_CHARACTERS_LIST,
             'total_seconds': len(second_to_chars)
         },
         'timestamps': {str(k): v for k, v in second_to_chars.items()}
@@ -301,7 +299,7 @@ def save_timestamps(
     csv_data = []
     for second in sorted(second_to_chars.keys()):
         row = {'second': second}
-        for char in MAIN_CHARACTERS:
+        for char in MAIN_CHARACTERS_LIST:
             row[char] = 1 if char in second_to_chars[second] else 0
         csv_data.append(row)
 
@@ -330,7 +328,7 @@ def get_video_fps(video_path: str) -> float:
     return fps
 
 
-def main(episode_id: str, annotation_file: str | None, scratch_dir: str,
+def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
          max_gap_sec: float = 1.0):
     """
     Generate per-second character presence timestamps.
@@ -347,17 +345,26 @@ def main(episode_id: str, annotation_file: str | None, scratch_dir: str,
 
     # Auto-detect annotation file if not provided
     if annotation_file is None:
-        # Look for ClusterMark annotation file (not the refined JSON)
-        annotation_file = os.path.join(
+        # Prefer refined version, fall back to non-refined
+        possible_file = os.path.join(
             scratch_dir, "output", "face_clustering",
             f"{episode_id}_matched_faces_with_clusters_refined.json"
         )
-        if not os.path.exists(annotation_file):
-            # Fallback to non-refined version
-            annotation_file = os.path.join(
+        if not os.path.exists(possible_file):
+            possible_file = os.path.join(
                 scratch_dir, "output", "face_clustering",
                 f"{episode_id}_matched_faces_with_clusters.json"
             )
+
+        if not os.path.exists(possible_file):
+            raise FileNotFoundError(
+                f"Auto-detection failed. Could not find annotation file for episode {episode_id}. "
+                f"Looked for: {episode_id}_matched_faces_with_clusters_refined.json "
+                f"and {episode_id}_matched_faces_with_clusters.json in "
+                f"{os.path.join(scratch_dir, 'output', 'face_clustering')}"
+            )
+
+        annotation_file = possible_file
         logger.info(f"Auto-detected annotation file: {annotation_file}")
 
     # Load annotations
@@ -382,16 +389,16 @@ def main(episode_id: str, annotation_file: str | None, scratch_dir: str,
     logger.info(f"Loading refined clustering from: {refined_clustering_file}")
     refined_clustering = read_json(refined_clustering_file)
 
-    # Handle new refined JSON format that has both cluster_annotations and scene data
+    # Handle new refined JSON format that has both cluster_info and scene data
     # If it's the new format, use the same file for clustering (it already contains both)
     # If annotation_file is the same as refined_clustering_file, skip reloading
     if annotation_file == refined_clustering_file:
         logger.info("Using refined JSON for both annotations and clustering data")
-        # The annotations variable already has cluster_annotations
+        # The annotations variable already has cluster_info
         # Extract scene data from refined_clustering (skip metadata keys)
         clustering_data = {}
         for key, value in refined_clustering.items():
-            if key not in ('metadata', 'cluster_annotations', 'data'):
+            if key not in ('metadata', 'cluster_info', 'data'):
                 clustering_data[key] = value
             elif key == 'data':
                 clustering_data.update(value)
@@ -444,7 +451,7 @@ def main(episode_id: str, annotation_file: str | None, scratch_dir: str,
     total_seconds = len(second_to_chars)
     logger.info(f"Total seconds: {total_seconds}")
     logger.info(f"Character appearance time (seconds):")
-    for char in MAIN_CHARACTERS:
+    for char in MAIN_CHARACTERS_LIST:
         percentage = (char_seconds[char] / total_seconds * 100) if total_seconds > 0 else 0
         logger.info(f"  {char.capitalize():10s}: {char_seconds[char]:4d} ({percentage:5.1f}%)")
 

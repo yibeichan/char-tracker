@@ -215,6 +215,9 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
         logger.warning(
             f"Episode ID mismatch: annotation={annotation_episode_id}, argument={episode_id}"
         )
+        raise ValueError(
+            f"Episode ID mismatch: annotation={annotation_episode_id}, argument={episode_id}"
+        )
 
     # Load original clustering data
     clustering_file = os.path.join(
@@ -260,7 +263,7 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
                 if cluster_id.startswith('cluster-'):
                     name_part = cluster_id.replace('cluster-', '')
                     # Check if it's a numeric cluster (e.g., "001") or a name
-                    if name_part.isdigit() or (name_part[0].isdigit() if name_part else False):
+                    if name_part and name_part[0].isdigit():
                         cluster_info[cluster_id] = {'label': f'other_{name_part}', 'cluster_id': cluster_id}
                     else:
                         cluster_info[cluster_id] = {'label': name_part, 'cluster_id': cluster_id}

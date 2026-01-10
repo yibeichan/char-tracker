@@ -21,6 +21,8 @@ import networkx as nx
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Optional, Any
 
+from constants import MAIN_CHARACTERS, SKIP_LABELS, DK_LABEL_PREFIX
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,9 +43,6 @@ class ClusterRefiner:
     - Large clusters (n >= 15) labeled with main character = GT for main images
     """
 
-    # Main characters that should have exact ground truth clusters
-    MAIN_CHARACTERS = {'rachel', 'monica', 'chandler', 'joey', 'phoebe', 'ross'}
-
     # Default configuration
     DEFAULT_CONFIG = {
         'unannotated_cluster_threshold': 0.55,
@@ -59,12 +58,6 @@ class ClusterRefiner:
         'small_residual_threshold': 5,      # Below this = try to merge
         'small_residual_similarity': 0.7,   # Threshold for merging small clusters
     }
-
-    # Labels to skip entirely
-    SKIP_LABELS = ['not_human', 'background', 'unclear', 'junk', 'not face', 'not clear']
-
-    # DK label patterns
-    DK_LABEL_PREFIX = 'dk'
 
     def __init__(self, annotations: dict, clustering_data: dict, config: Optional[dict] = None):
         """
@@ -138,9 +131,10 @@ class ClusterRefiner:
         name_without_ext = os.path.splitext(filename)[0]
         parts = name_without_ext.split('_')
 
-        # Rebuild as scene_X_Y (removing face/track keywords)
-        if len(parts) >= 4 and parts[0] == 'scene':
-            return f"{parts[0]}_{parts[1]}_{parts[3]}"
+        # Rebuild as scene_X_Y_Z (removing face/track keywords, keeping frame number)
+        # Frame number is REQUIRED for unique keys per image
+        if len(parts) >= 6 and parts[0] == 'scene' and parts[2] in ('face', 'track') and parts[4] == 'frame':
+            return f"{parts[0]}_{parts[1]}_{parts[3]}_{parts[5]}"
 
         return filename
 
@@ -553,9 +547,13 @@ class ClusterRefiner:
                 centroid_a = dk_centroids[label_a]
                 centroid_b = dk_centroids[label_b]
 
-                similarity = np.dot(centroid_a, centroid_b) / (
-                    np.linalg.norm(centroid_a) * np.linalg.norm(centroid_b)
-                )
+                # Compute cosine similarity with zero-norm guard
+                norm_a = np.linalg.norm(centroid_a)
+                norm_b = np.linalg.norm(centroid_b)
+                if norm_a == 0 or norm_b == 0:
+                    similarity = 0.0
+                else:
+                    similarity = np.dot(centroid_a, centroid_b) / (norm_a * norm_b)
 
                 if similarity > dk_threshold:
                     # Merge the groups
@@ -630,10 +628,13 @@ class ClusterRefiner:
                 if emb_a is None or emb_b is None:
                     continue
 
-                # Compute cosine similarity
-                similarity = np.dot(emb_a, emb_b) / (
-                    np.linalg.norm(emb_a) * np.linalg.norm(emb_b)
-                )
+                # Compute cosine similarity with zero-norm guard
+                norm_a = np.linalg.norm(emb_a)
+                norm_b = np.linalg.norm(emb_b)
+                if norm_a == 0 or norm_b == 0:
+                    similarity = 0.0
+                else:
+                    similarity = np.dot(emb_a, emb_b) / (norm_a * norm_b)
 
                 if similarity > threshold:
                     graph.add_edge(face_a, face_b, weight=similarity)
@@ -1261,9 +1262,13 @@ class ClusterRefiner:
             best_similarity = -1
 
             for ann_cluster_id, ann_data in cluster_centroids.items():
-                similarity = np.dot(unannotated_centroid, ann_data['embedding']) / (
-                    np.linalg.norm(unannotated_centroid) * np.linalg.norm(ann_data['embedding'])
-                )
+                # Compute cosine similarity with zero-norm guard
+                norm_a = np.linalg.norm(unannotated_centroid)
+                norm_b = np.linalg.norm(ann_data['embedding'])
+                if norm_a == 0 or norm_b == 0:
+                    similarity = 0.0
+                else:
+                    similarity = np.dot(unannotated_centroid, ann_data['embedding']) / (norm_a * norm_b)
 
                 if similarity > best_similarity:
                     best_similarity = similarity
