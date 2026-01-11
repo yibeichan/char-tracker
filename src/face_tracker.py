@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import pandas as pd
 import cv2
 import torch
 from tqdm import tqdm
