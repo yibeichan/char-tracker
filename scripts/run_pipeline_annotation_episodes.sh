@@ -93,8 +93,6 @@ fi
 MODE="${MODE:-symlink}"
 USE_SEQUENTIAL="${NO_SEQUENTIAL:-}"
 USE_BATCH="${NO_BATCH:-}"
-BATCH_SIZE="${BATCH_SIZE:-32}"
-MODEL_NAME="${MODEL_NAME:-buffalo_l}"
 SIMILARITY_THRESHOLD="${SIMILARITY_THRESHOLD:-0.5}"
 
 # Get the episode for this array task
@@ -138,7 +136,6 @@ echo "=========================================="
 echo "SLURM Array Job ID: ${SLURM_ARRAY_JOB_ID}"
 echo "SLURM Array Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Episode: $TASK_ID"
-echo "Embedding model: $MODEL_NAME"
 echo "Similarity threshold: $SIMILARITY_THRESHOLD"
 echo "Node: $(hostname)"
 echo ""
@@ -156,8 +153,6 @@ fi
 if [ -n "$USE_BATCH" ]; then
     CMD+=(--no-batch)
 fi
-CMD+=(--batch-size "$BATCH_SIZE")
-CMD+=(--model-name "$MODEL_NAME")
 CMD+=(--similarity-threshold "$SIMILARITY_THRESHOLD")
 
 echo "Command: ${CMD[*]}"

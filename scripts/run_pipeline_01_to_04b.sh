@@ -66,7 +66,7 @@ check_dir_exists() {
 
 # Parse arguments
 if [ $# -lt 1 ]; then
-    log_error "Usage: $0 <video_name> [--mode copy|move|symlink] [--no-sequential] [--no-batch] [--batch-size N] [--model-name vggface2|buffalo_l]"
+    log_error "Usage: $0 <video_name> [--mode copy|move|symlink] [--no-sequential] [--no-batch] [--similarity-threshold N]"
     exit 1
 fi
 
@@ -74,8 +74,6 @@ VIDEO_NAME=$1
 MODE="copy"  # Default mode for 04b
 NO_SEQUENTIAL=""  # Empty = use sequential (optimized)
 NO_BATCH=""  # Empty = use batch processing (optimized)
-BATCH_SIZE="32"  # Default batch size
-MODEL_NAME="vggface2"  # Default embedding model
 SIMILARITY_THRESHOLD="0.5"  # Default similarity threshold for clustering
 
 # Parse optional arguments
@@ -102,27 +100,6 @@ while [ $# -gt 0 ]; do
         --no-batch)
             NO_BATCH="--no-batch"
             shift
-            ;;
-        --batch-size)
-            if [ $# -lt 2 ]; then
-                log_error "Missing argument for --batch-size."
-                exit 1
-            fi
-            BATCH_SIZE="$2"
-            shift 2
-            ;;
-        --model-name)
-            if [ $# -lt 2 ]; then
-                log_error "Missing argument for --model-name."
-                exit 1
-            fi
-            if [[ "$2" =~ ^(vggface2|buffalo_l)$ ]]; then
-                MODEL_NAME="$2"
-                shift 2
-            else
-                log_error "Invalid model-name: '$2'. Must be 'vggface2' or 'buffalo_l'."
-                exit 1
-            fi
             ;;
         --similarity-threshold)
             if [ $# -lt 2 ]; then
@@ -162,7 +139,6 @@ fi
 log_info "SCRATCH_DIR: $SCRATCH_DIR"
 log_info "Video name: $VIDEO_NAME"
 log_info "Mode for 04b: $MODE"
-log_info "Embedding model: $MODEL_NAME"
 log_info "Similarity threshold: $SIMILARITY_THRESHOLD"
 if [ -z "$NO_SEQUENTIAL" ]; then
     log_info "Step 03: Sequential frame reading ENABLED (5-10x faster)"
@@ -170,7 +146,7 @@ else
     log_warning "Step 03: Sequential frame reading DISABLED (using legacy mode)"
 fi
 if [ -z "$NO_BATCH" ]; then
-    log_info "Step 04: Batch processing ENABLED (batch_size=$BATCH_SIZE, 2-4x faster)"
+    log_info "Step 04: Batch processing ENABLED (2-4x faster)"
 else
     log_warning "Step 04: Batch processing DISABLED (using sequential mode)"
 fi
@@ -266,8 +242,6 @@ cmd_step04=("python" "04_face_clustering.py" "$VIDEO_NAME")
 if [ -n "$NO_BATCH" ]; then
     cmd_step04+=("--no-batch")
 fi
-cmd_step04+=("--batch-size" "$BATCH_SIZE")
-cmd_step04+=("--model-name" "$MODEL_NAME")
 cmd_step04+=("--similarity-threshold" "$SIMILARITY_THRESHOLD")
 "${cmd_step04[@]}"
 
