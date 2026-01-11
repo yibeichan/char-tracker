@@ -171,7 +171,7 @@ class FaceTracker:
 
 class FrameSelector:
     def __init__(self, video_file, top_n=3, output_dir=None, save_images=True,
-                 crop_expansion=0.2, min_crop_size=50):
+                 crop_expansion=0.2, min_crop_size=50, diverse_frames=True):
         """
         Initialize FrameSelector.
 
@@ -184,6 +184,8 @@ class FrameSelector:
                            This makes faces easier to identify visually while keeping
                            original tight boxes in metadata for embedding extraction.
             min_crop_size: Minimum face size in pixels to save (filters tiny/blurry crops)
+            diverse_frames: If True, select frames with temporal diversity (early/mid/late track)
+                           for better clustering robustness.
         """
         self.video_file = video_file
         self.top_n = top_n
@@ -191,6 +193,7 @@ class FrameSelector:
         self.save_images = save_images
         self.crop_expansion = crop_expansion
         self.min_crop_size = min_crop_size
+        self.diverse_frames = diverse_frames
 
         if save_images and output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -430,6 +433,66 @@ class FrameSelector:
 
         return selected_frames
 
+    def _select_best_frames_diverse(self, face_scores, face_metadata):
+        """
+        Select top N frames per face with temporal diversity.
+
+        Instead of picking the absolute best N frames, this method:
+        1. Divides the track into N temporal segments (early/mid/late)
+        2. Picks the BEST frame (by quality score) from each segment
+
+        This ensures diversity in pose, lighting, and appearance across the selected frames,
+        which leads to more robust embeddings for clustering.
+
+        Args:
+            face_scores: dict mapping (scene_id, face_id) -> list of frame score dicts
+            face_metadata: dict mapping (scene_id, face_id) -> metadata
+
+        Returns:
+            selected_frames: Final output structure with diverse top frames per face
+        """
+        selected_frames = {}
+
+        for (scene_id, face_id), scores in face_scores.items():
+            if scene_id not in selected_frames:
+                selected_frames[scene_id] = []
+
+            # Sort by frame number to get temporal order
+            scores_sorted_by_frame = sorted(scores, key=lambda x: x["frame_idx"])
+            n_frames = len(scores_sorted_by_frame)
+
+            if n_frames <= self.top_n:
+                # Track is short, just use all frames (sorted by quality)
+                top_frames = sorted(scores_sorted_by_frame, key=lambda x: x["total_score"], reverse=True)
+            else:
+                # Divide track into segments and pick best from each
+                segment_size = n_frames / self.top_n
+                top_frames = []
+
+                for i in range(self.top_n):
+                    # Get frames in this segment
+                    start_idx = int(i * segment_size)
+                    end_idx = int((i + 1) * segment_size) if i < self.top_n - 1 else n_frames
+                    segment = scores_sorted_by_frame[start_idx:end_idx]
+
+                    # Pick best frame from this segment (by quality score)
+                    best_in_segment = max(segment, key=lambda x: x["total_score"])
+                    top_frames.append(best_in_segment)
+
+            metadata = face_metadata[(scene_id, face_id)]
+            selected_frames[scene_id].append({
+                "unique_face_id": metadata['unique_face_id'],
+                "global_face_id": metadata['global_face_id'],
+                "top_frames": [{
+                    "frame_idx": frame['frame_idx'],
+                    "total_score": frame['total_score'],
+                    "face_coord": frame['face_coord'],
+                    "image_path": frame['image_path']
+                } for frame in top_frames]
+            })
+
+        return selected_frames
+
     def select_top_frames_per_face(self, tracked_data, use_sequential=True):
         """
         Select top frames per face based on confidence, size, brightness, and sharpness.
@@ -446,7 +509,12 @@ class FrameSelector:
             # Optimized path: Read video once sequentially
             frame_requirements, face_metadata = self._collect_frame_requirements(tracked_data)
             face_scores = self._sequential_read_and_score(frame_requirements)
-            return self._select_best_frames(face_scores, face_metadata)
+
+            # Choose selection method based on diverse_frames setting
+            if self.diverse_frames:
+                return self._select_best_frames_diverse(face_scores, face_metadata)
+            else:
+                return self._select_best_frames(face_scores, face_metadata)
         else:
             # Legacy path: Random seeks (kept for backward compatibility)
             return self._select_top_frames_per_face_legacy(tracked_data)
