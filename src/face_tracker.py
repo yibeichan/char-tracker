@@ -475,6 +475,10 @@ class FrameSelector:
                     end_idx = int((i + 1) * segment_size) if i < self.top_n - 1 else n_frames
                     segment = scores_sorted_by_frame[start_idx:end_idx]
 
+                    # Skip empty segments defensively to avoid ValueError in max()
+                    if not segment:
+                        continue
+
                     # Pick best frame from this segment (by quality score)
                     best_in_segment = max(segment, key=lambda x: x["total_score"])
                     top_frames.append(best_in_segment)

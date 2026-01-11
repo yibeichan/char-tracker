@@ -56,7 +56,10 @@ class ClusterRefiner:
         'max_cannot_link_samples': 5,
         # New config options
         'small_cluster_threshold': 15,      # Below this = absolute ground truth
-        'dk_linking_threshold': 0.6,        # For DK embedding-based linking (conservative)
+        'dk_linking_threshold': 0.6,        # DK cross-cluster linking; lowered from 0.65 to 0.6
+                                           # after evals to increase recall while keeping precision
+                                           # conservative and below general similarity threshold.
+        'quality_modifier_weight': 0.5,     # Weight multiplier for faces with quality modifiers
         'must_link_track_threshold': 0.5,   # Min faces in track for must-link
         'chinese_whispers_iterations': 100,
         'similarity_threshold': 0.6,        # For graph construction
@@ -275,8 +278,8 @@ class ClusterRefiner:
                 track_id = self.extract_track_from_filename(filename)
 
                 # Store face weight based on quality modifiers for main cluster images
-                if main_modifiers & constants.QUALITY_MODIFIERS:
-                    face_weights[face_id] = 0.5
+                if main_modifiers & self.QUALITY_MODIFIERS:
+                    face_weights[face_id] = self.config['quality_modifier_weight']
 
                 # Extract scene and track numbers for track-based mapping
                 if track_id:
@@ -423,10 +426,10 @@ class ClusterRefiner:
                     if face_id in self.ground_truth_faces:
                         self.ground_truth_faces.remove(face_id)
                         removed_count += 1
-                        # Also remove from locked clusters
-                        for char_faces in self.locked_clusters.values():
-                            if face_id in char_faces:
-                                char_faces.remove(face_id)
+
+                # Also remove from locked clusters (rebuild lists to avoid modifying while iterating)
+                for char, char_faces in self.locked_clusters.items():
+                    self.locked_clusters[char] = [f for f in char_faces if f not in faces_to_remove]
 
                 logger.info(f"  Found {len(tracks_to_remove)} tracks with label inconsistencies")
                 logger.info(f"  Removed {removed_count} faces from ground truth due to track inconsistencies")
@@ -594,27 +597,6 @@ class ClusterRefiner:
                 modifiers.add(part)
 
         return base_label, modifiers
-
-    def _get_face_weight(self, label: str) -> float:
-        """
-        Get the weight to use for a face based on quality modifiers.
-
-        Faces with quality modifiers (@poor, @blurry, @dark, @profile, @back)
-        get lower weight during clustering since their embeddings may be less reliable.
-
-        Args:
-            label: The face label (may include quality modifiers)
-
-        Returns:
-            float: Weight multiplier (0.5 for poor quality, 1.0 for normal)
-        """
-        base_label, modifiers = self._parse_label_with_modifiers(label)
-
-        # Check for quality modifiers
-        if modifiers & self.QUALITY_MODIFIERS:
-            return 0.5  # Down-weight poor quality faces
-
-        return 1.0  # Full weight for normal quality faces
 
     def _find_inconsistent_tracks_in_cluster(self, cluster_id: int) -> Set[str]:
         """
