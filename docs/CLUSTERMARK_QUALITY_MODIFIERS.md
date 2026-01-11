@@ -486,6 +486,14 @@ def _extract_ground_truth(self) -> Dict[str, Any]:
             else:
                 outlier_quality = outlier_modifiers
 
+            # Get face_id for this outlier (critical: must be updated per outlier)
+            filename = os.path.basename(outlier['image_path'])
+            norm_key = self._normalize_filename_key(filename)
+            if norm_key not in self.image_mapping_norm:
+                continue
+            face_data = self.image_mapping_norm[norm_key]
+            face_id = face_data['unique_face_id']
+
             # Store weight
             if outlier_quality & constants.QUALITY_MODIFIERS:
                 face_weights[face_id] = 0.5

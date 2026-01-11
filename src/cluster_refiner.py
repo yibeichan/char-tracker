@@ -559,6 +559,14 @@ class ClusterRefiner:
         """
         Parse a label to extract the base label and any quality modifiers.
 
+        This implements the "simpler approach" for quality modifiers without
+        requiring ClusterMark UI changes. Quality attributes are encoded directly
+        in the label string using @-prefixed modifiers (e.g., "rachel @poor").
+
+        The future ClusterMark format (see docs/CLUSTERMARK_QUALITY_MODIFIERS.md)
+        would use a separate 'quality' field in the annotation JSON, but this
+        label-based approach works immediately with the existing UI.
+
         Examples:
             "rachel" -> ("rachel", set())
             "rachel @poor" -> ("rachel", {"@poor"})
