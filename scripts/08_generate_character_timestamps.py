@@ -38,7 +38,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import shared constants
-from constants import MAIN_CHARACTERS, SKIP_LABELS
+import constants
+MAIN_CHARACTERS = constants.MAIN_CHARACTERS
+SKIP_LABELS = constants.SKIP_LABELS
 
 # Sorted list for consistent ordering (e.g., CSV columns)
 MAIN_CHARACTERS_LIST = sorted(MAIN_CHARACTERS)
@@ -58,40 +60,59 @@ def save_json(data: dict, output_file: str):
         json.dump(data, f, indent=2)
 
 
-def build_cluster_to_character_mapping(annotations: dict) -> Dict[int, str]:
+def build_cluster_to_character_mapping(annotations: dict) -> Dict[str, str]:
     """
     Build mapping from cluster_id to character name from annotations.
 
+    Handles both:
+    - ClusterMark format: {cluster_id: {'label': ..., ...}}
+    - Refined format: {'cluster_info': {cluster_id: {'label': ..., ...}}}
+
     Args:
-        annotations: Annotation JSON from ClusterMark
+        annotations: Annotation JSON from ClusterMark or refined output
 
     Returns:
-        dict: {cluster_id: character_name}
+        dict: {cluster_id: character_name} where cluster_id is always string (normalized)
     """
     cluster_to_char = {}
 
-    # Handle both ClusterMark format and direct format
-    cluster_annotations = annotations.get('cluster_annotations', annotations)
+    # Check if this is the refined format with top-level cluster_info
+    if 'cluster_info' in annotations:
+        # Refined format: cluster_info at top level
+        cluster_info = annotations['cluster_info']
+        for cluster_id, info in cluster_info.items():
+            if isinstance(info, dict) and 'label' in info:
+                label = info['label'].lower()
+                # Only include main characters
+                if label in MAIN_CHARACTERS:
+                    cluster_to_char[cluster_id] = label
+                else:
+                    logger.debug(f"Skipping non-main character label: {label}")
+    else:
+        # ClusterMark format
+        cluster_annotations = annotations.get('cluster_annotations', annotations)
 
-    for cluster_key, cluster_info in cluster_annotations.items():
-        label = cluster_info['label'].lower()
+        for cluster_key, cluster_info in cluster_annotations.items():
+            if not isinstance(cluster_info, dict):
+                continue
+            label = cluster_info.get('label', '').lower()
 
-        # Skip non-main-character labels
-        if label in SKIP_LABELS:
-            continue
+            # Skip non-main-character labels
+            if label in SKIP_LABELS:
+                continue
 
-        # Extract numeric cluster ID from string like "friends_s01e03b_cluster-197"
-        # or just "cluster-197" or "197"
-        if '-' in cluster_key:
-            numeric_id = int(cluster_key.split('-')[-1])
-        else:
-            numeric_id = int(cluster_key)
+            # Extract cluster ID from string like "friends_s01e03b_cluster-197"
+            # or just "cluster-197" or "197"
+            if '-' in cluster_key:
+                cluster_id = cluster_key.split('-')[-1]
+            else:
+                cluster_id = cluster_key
 
-        # Only include main characters
-        if label in MAIN_CHARACTERS:
-            cluster_to_char[numeric_id] = label
-        else:
-            logger.debug(f"Skipping non-main character label: {label}")
+            # Only include main characters
+            if label in MAIN_CHARACTERS:
+                cluster_to_char[cluster_id] = label
+            else:
+                logger.debug(f"Skipping non-main character label: {label}")
 
     logger.info(f"Mapped {len(cluster_to_char)} clusters to main characters")
     for cluster_id, char in sorted(cluster_to_char.items()):
@@ -102,7 +123,7 @@ def build_cluster_to_character_mapping(annotations: dict) -> Dict[int, str]:
 
 def build_track_to_character_mapping(
     refined_clustering: dict,
-    cluster_to_char: Dict[int, str]
+    cluster_to_char: Dict[str, str]
 ) -> Dict[str, str]:
     """
     Build mapping from track (unique_face_id) to character name.
@@ -122,8 +143,10 @@ def build_track_to_character_mapping(
             unique_face_id = face_data['unique_face_id']
             cluster_id = face_data.get('cluster_id')
 
-            if cluster_id in cluster_to_char:
-                track_to_char[unique_face_id] = cluster_to_char[cluster_id]
+            # Normalize cluster_id to string for lookup
+            cluster_key = str(cluster_id) if cluster_id is not None else None
+            if cluster_key and cluster_key in cluster_to_char:
+                track_to_char[unique_face_id] = cluster_to_char[cluster_key]
             else:
                 unmapped_tracks.append((unique_face_id, cluster_id))
 

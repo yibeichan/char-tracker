@@ -3,7 +3,6 @@ import os
 from facenet_pytorch import MTCNN
 import torch
 import json
-import numpy as np
 from tqdm import tqdm
 
 class FaceDetector:

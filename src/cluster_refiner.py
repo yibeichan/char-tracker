@@ -21,7 +21,7 @@ import networkx as nx
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Optional, Any
 
-from constants import MAIN_CHARACTERS, SKIP_LABELS, DK_LABEL_PREFIX
+import constants
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,12 @@ class ClusterRefiner:
     - Large clusters (n >= 15) labeled with main character = GT for main images
     """
 
+    # Expose constants as class attributes for external access
+    MAIN_CHARACTERS = constants.MAIN_CHARACTERS
+    SKIP_LABELS = constants.SKIP_LABELS
+    DK_LABEL_PREFIX = constants.DK_LABEL_PREFIX
+    QUALITY_MODIFIERS = constants.QUALITY_MODIFIERS
+
     # Default configuration
     DEFAULT_CONFIG = {
         'unannotated_cluster_threshold': 0.55,
@@ -50,13 +56,21 @@ class ClusterRefiner:
         'max_cannot_link_samples': 5,
         # New config options
         'small_cluster_threshold': 15,      # Below this = absolute ground truth
-        'dk_linking_threshold': 0.65,       # For DK embedding-based linking (conservative)
+        'dk_linking_threshold': 0.6,        # DK cross-cluster linking; lowered from 0.65 to 0.6
+                                           # after evals to increase recall while keeping precision
+                                           # conservative and below general similarity threshold.
+        'quality_modifier_weight': 0.5,     # Weight multiplier for faces with quality modifiers
         'must_link_track_threshold': 0.5,   # Min faces in track for must-link
         'chinese_whispers_iterations': 100,
         'similarity_threshold': 0.6,        # For graph construction
         'large_cluster_auto_trust': True,   # Auto-trust all faces in large labeled clusters
         'small_residual_threshold': 5,      # Below this = try to merge
         'small_residual_similarity': 0.7,   # Threshold for merging small clusters
+        # Scene proximity and track consistency options
+        'scene_proximity_bonus': 0.03,      # Max bonus for adjacent scenes in DK linking
+        'scene_proximity_decay': 0.015,     # Bonus decay per additional scene distance
+        'track_consistency_auto_correct': True,  # Auto-correct track inconsistencies
+        'scene_proximity_enabled': True,    # Enable scene proximity weighting in DK linking
     }
 
     def __init__(self, annotations: dict, clustering_data: dict, config: Optional[dict] = None):
@@ -214,6 +228,9 @@ class ClusterRefiner:
 
         Also extracts DK groups with their track mappings.
 
+        Quality modifiers (@poor, @blurry, @dark, @profile, @back) are stripped from labels
+        and the face weights are stored for use during centroid computation.
+
         Returns:
             dict: Ground truth data with keys:
                 - ground_truth_tracks: {(scene_id, track_id) -> character}
@@ -228,6 +245,7 @@ class ClusterRefiner:
         dk_tracks: Dict[Tuple[str, int], str] = {}
         dk_by_cluster: Dict[int, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
         locked_clusters: Dict[str, Set[str]] = {char: set() for char in self.MAIN_CHARACTERS}
+        face_weights: Dict[str, float] = {}  # Store weight per face_id
 
         logger.info(f"Extracting ground truth (small cluster threshold: {small_threshold})...")
 
@@ -238,7 +256,9 @@ class ClusterRefiner:
             else:
                 cluster_id = int(cluster_key)
 
-            main_label = cluster_info['label'].lower()
+            # Parse label to extract base label and quality modifiers
+            raw_label = cluster_info['label'].lower()
+            main_label, main_modifiers = self._parse_label_with_modifiers(raw_label)
             image_count = cluster_info.get('image_count', len(cluster_info.get('image_paths', [])))
 
             # Check if this is a main character cluster
@@ -256,6 +276,10 @@ class ClusterRefiner:
                 face_data = self.image_mapping_norm[norm_key]
                 face_id = face_data['unique_face_id']
                 track_id = self.extract_track_from_filename(filename)
+
+                # Store face weight based on quality modifiers for main cluster images
+                if main_modifiers & self.QUALITY_MODIFIERS:
+                    face_weights[face_id] = self.config['quality_modifier_weight']
 
                 # Extract scene and track numbers for track-based mapping
                 if track_id:
@@ -278,7 +302,9 @@ class ClusterRefiner:
 
             # Process outliers
             for outlier in cluster_info.get('outliers', []):
-                outlier_label = outlier['label'].lower()
+                # Parse label to extract base label and quality modifiers
+                raw_label = outlier['label'].lower()
+                outlier_label, outlier_modifiers = self._parse_label_with_modifiers(raw_label)
 
                 if outlier_label in self.SKIP_LABELS:
                     continue
@@ -293,6 +319,10 @@ class ClusterRefiner:
                 face_data = self.image_mapping_norm[norm_key]
                 face_id = face_data['unique_face_id']
                 track_id = self.extract_track_from_filename(filename)
+
+                # Store face weight based on quality modifiers
+                if outlier_modifiers & self.QUALITY_MODIFIERS:
+                    face_weights[face_id] = 0.5
 
                 if track_id:
                     parts = track_id.split('_')
@@ -323,6 +353,7 @@ class ClusterRefiner:
         self.dk_track_mapping = dk_tracks
         self.dk_by_cluster = dict(dk_by_cluster)
         self.locked_clusters = {k: list(v) for k, v in locked_clusters.items()}
+        self.face_weights = face_weights  # Store face weights for quality modifiers
 
         # Update statistics
         self.stats['ground_truth_tracks'] = len(self.ground_truth_tracks)
@@ -349,6 +380,8 @@ class ClusterRefiner:
         """
         Separate outliers from parent clusters into their own groups.
 
+        Now includes track consistency validation before separation.
+
         Returns:
             tuple: (remaining_cluster_faces, outlier_groups)
                 - remaining_cluster_faces: {cluster_id: [remaining face_ids]}
@@ -363,6 +396,43 @@ class ClusterRefiner:
                 cluster_id = face_data.get('cluster_id')
                 if cluster_id is not None:
                     cluster_to_faces[cluster_id].add(face_data['unique_face_id'])
+
+        # Step 0: Validate track consistency within each cluster before separating
+        # Find all tracks with inconsistent labels and remove them from ground truth
+        tracks_to_remove: Set[str] = set()  # Track IDs to remove from GT
+
+        if self.config.get('track_consistency_auto_correct', True):
+            logger.info("  Validating track consistency within clusters...")
+            for cluster_id in cluster_to_faces.keys():
+                inconsistent_tracks = self._find_inconsistent_tracks_in_cluster(cluster_id)
+                if inconsistent_tracks:
+                    tracks_to_remove.update(inconsistent_tracks)
+
+            if tracks_to_remove:
+                # Remove faces from inconsistent tracks from ground truth
+                faces_to_remove = set()
+                for track_id in tracks_to_remove:
+                    # Find all faces in this track
+                    for scene_id, faces in self.clustering_data.items():
+                        for face_data in faces:
+                            for img_path in face_data.get('image_paths', []):
+                                if self.extract_track_from_filename(img_path) == track_id:
+                                    faces_to_remove.add(face_data['unique_face_id'])
+                                    break
+
+                # Remove from ground truth
+                removed_count = 0
+                for face_id in faces_to_remove:
+                    if face_id in self.ground_truth_faces:
+                        self.ground_truth_faces.remove(face_id)
+                        removed_count += 1
+
+                # Also remove from locked clusters (rebuild lists to avoid modifying while iterating)
+                for char, char_faces in self.locked_clusters.items():
+                    self.locked_clusters[char] = [f for f in char_faces if f not in faces_to_remove]
+
+                logger.info(f"  Found {len(tracks_to_remove)} tracks with label inconsistencies")
+                logger.info(f"  Removed {removed_count} faces from ground truth due to track inconsistencies")
 
         # Track outlier faces to remove from clusters
         outlier_faces: Set[str] = set()
@@ -436,6 +506,170 @@ class ClusterRefiner:
 
         return 'unknown'
 
+    @staticmethod
+    def _get_scene_distance(scene_a: str, scene_b: str) -> int:
+        """
+        Calculate distance between two scene IDs.
+
+        Args:
+            scene_a: Scene ID like '001' or full 'scene_001'
+            scene_b: Scene ID like '003' or full 'scene_003'
+
+        Returns:
+            int: Absolute difference in scene numbers (e.g., '001' and '003' -> 2)
+        """
+        # Extract numeric part if full scene ID
+        if '_' in scene_a:
+            scene_a = scene_a.split('_')[1]
+        if '_' in scene_b:
+            scene_b = scene_b.split('_')[1]
+
+        try:
+            return abs(int(scene_a) - int(scene_b))
+        except (ValueError, IndexError):
+            return 999  # Large distance for unparseable scene IDs
+
+    def _compute_scene_weighted_similarity(
+        self,
+        similarity: float,
+        scene_distance: int
+    ) -> float:
+        """
+        Apply small scene proximity bonus to similarity score.
+
+        The bonus is small (max +0.03) so it only helps when embeddings
+        are already very close. This prevents scene proximity from
+        overpowering actual face similarity.
+
+        Args:
+            similarity: Base cosine similarity
+            scene_distance: Distance between scenes (from _get_scene_distance)
+
+        Returns:
+            float: Similarity score with proximity bonus applied
+        """
+        if not self.config.get('scene_proximity_enabled', True):
+            return similarity
+
+        bonus = self.config.get('scene_proximity_bonus', 0.03)
+        decay = self.config.get('scene_proximity_decay', 0.015)
+
+        if scene_distance == 1:
+            return similarity + bonus
+        elif scene_distance == 2:
+            return similarity + (bonus - decay)
+        else:
+            return similarity  # No bonus for distant scenes
+
+    @staticmethod
+    def _parse_label_with_modifiers(label: str) -> Tuple[str, Set[str]]:
+        """
+        Parse a label to extract the base label and any quality modifiers.
+
+        This implements the "simpler approach" for quality modifiers without
+        requiring ClusterMark UI changes. Quality attributes are encoded directly
+        in the label string using @-prefixed modifiers (e.g., "rachel @poor").
+
+        The future ClusterMark format (see docs/CLUSTERMARK_QUALITY_MODIFIERS.md)
+        would use a separate 'quality' field in the annotation JSON, but this
+        label-based approach works immediately with the existing UI.
+
+        Examples:
+            "rachel" -> ("rachel", set())
+            "rachel @poor" -> ("rachel", {"@poor"})
+            "dk1 @blurry @dark" -> ("dk1", {"@blurry", "@dark"})
+
+        Args:
+            label: The label string to parse
+
+        Returns:
+            tuple: (base_label, set of modifiers)
+        """
+        if not label:
+            return label, set()
+
+        parts = label.lower().split()
+        base_label = parts[0]
+        modifiers = set()
+
+        for part in parts[1:]:
+            if part.startswith('@'):
+                modifiers.add(part)
+
+        return base_label, modifiers
+
+    def _find_inconsistent_tracks_in_cluster(self, cluster_id: int) -> Set[str]:
+        """
+        Find tracks with inconsistent labels within a cluster.
+
+        A track is inconsistent if it has faces labeled with different
+        characters (e.g., some "rachel", some "dk1").
+
+        Args:
+            cluster_id: The cluster ID to validate
+
+        Returns:
+            set: Track IDs with label inconsistencies
+        """
+        cluster_key = None
+
+        # Find the cluster key for this cluster_id
+        for key in self.annotations['cluster_annotations'].keys():
+            if '-' in key:
+                numeric_id = int(key.split('-')[-1])
+            else:
+                numeric_id = int(key)
+
+            if numeric_id == cluster_id:
+                cluster_key = key
+                break
+
+        if cluster_key is None:
+            return set()
+
+        cluster_info = self.annotations['cluster_annotations'][cluster_key]
+        # Parse label to extract base label and quality modifiers
+        raw_label = cluster_info['label'].lower()
+        main_label, main_modifiers = self._parse_label_with_modifiers(raw_label)
+
+        # Skip if this is a DK or skip label cluster
+        if main_label in self.SKIP_LABELS or main_label.startswith(self.DK_LABEL_PREFIX):
+            return set()
+
+        # Build track to labels mapping for faces in this cluster
+        track_labels: Dict[str, Set[str]] = defaultdict(set)
+
+        # Check main cluster images
+        for img_path in cluster_info.get('image_paths', []):
+            filename = os.path.basename(img_path)
+            track_id = self.extract_track_from_filename(filename)
+            if track_id:
+                track_labels[track_id].add(main_label)
+
+        # Check outliers
+        for outlier in cluster_info.get('outliers', []):
+            # Parse label to extract base label and quality modifiers
+            raw_label = outlier['label'].lower()
+            outlier_label, outlier_modifiers = self._parse_label_with_modifiers(raw_label)
+
+            if outlier_label in self.SKIP_LABELS:
+                continue
+
+            img_path = outlier['image_path']
+            filename = os.path.basename(img_path)
+            track_id = self.extract_track_from_filename(filename)
+
+            if track_id:
+                track_labels[track_id].add(outlier_label)
+
+        # Find tracks with multiple different labels
+        inconsistent_tracks = {
+            track_id for track_id, labels in track_labels.items()
+            if len(labels) > 1
+        }
+
+        return inconsistent_tracks
+
     def _link_dk_groups(self) -> Dict[str, List[str]]:
         """
         Link DK groups across clusters via track and embedding similarity.
@@ -450,89 +684,108 @@ class ClusterRefiner:
         logger.info("Linking DK groups across clusters...")
 
         dk_threshold = self.config['dk_linking_threshold']
+        scene_proximity_enabled = self.config.get('scene_proximity_enabled', True)
+        logger.info(f"  DK linking threshold: {dk_threshold:.3f}")
+        if scene_proximity_enabled:
+            bonus = self.config.get('scene_proximity_bonus', 0.03)
+            logger.info(f"  Scene proximity bonus: +{bonus:.3f} for adjacent scenes")
 
         # Step 1: Build DK groups from annotations
+        # IMPORTANT: DK labels (dk1, dk2, etc.) are cluster-specific!
+        # We use (cluster_id, dk_label) as the unique key for each group
+        # Track-based and embedding-based linking will merge them later if appropriate
         dk_groups: Dict[str, Set[str]] = defaultdict(set)
 
-        # Add DK faces from annotations
+        # Add DK faces from annotations with cluster-specific keys
         for cluster_id, dk_label_dict in self.dk_by_cluster.items():
             for dk_label, face_ids in dk_label_dict.items():
-                dk_groups[dk_label].update(face_ids)
+                # Use compound key to make each DK group unique per cluster
+                unique_key = f"cluster{cluster_id}_{dk_label}"
+                dk_groups[unique_key].update(face_ids)
+
+        initial_count = len(dk_groups)
+        logger.info(f"  Initial DK groups (cluster-specific): {initial_count}")
 
         # Step 2: Track-based linking across clusters
-        # If same track appears in different clusters with DK labels, merge the groups
-        track_to_dk_label: Dict[Tuple[str, int], Set[str]] = defaultdict(set)
+        # If same track appears in different cluster-specific DK groups, merge them
+        # Build mapping from track to cluster-specific DK group keys
+        track_to_dk_groups: Dict[str, Set[str]] = defaultdict(set)
 
-        for cluster_key, cluster_info in self.annotations['cluster_annotations'].items():
-            for outlier in cluster_info.get('outliers', []):
-                outlier_label = outlier['label'].lower()
-
-                if not outlier_label.startswith(self.DK_LABEL_PREFIX):
-                    continue
-
-                img_path = outlier['image_path']
-                filename = os.path.basename(img_path)
-                track_id = self.extract_track_from_filename(filename)
-
-                if track_id:
-                    parts = track_id.split('_')
-                    scene_id = parts[1]
-                    track_num = int(parts[3])
-                    track_key = (scene_id, track_num)
-
-                    norm_key = self._normalize_filename_key(filename)
-                    if norm_key in self.image_mapping_norm:
-                        face_id = self.image_mapping_norm[norm_key]['unique_face_id']
-                        track_to_dk_label[track_key].add(outlier_label)
-                        dk_groups[outlier_label].add(face_id)
+        for dk_group_key, face_ids in dk_groups.items():
+            for face_id in face_ids:
+                # Find which track this face belongs to
+                for scene_id, faces in self.clustering_data.items():
+                    for face_data in faces:
+                        if face_data['unique_face_id'] == face_id:
+                            for img_path in face_data.get('image_paths', []):
+                                track_id = self.extract_track_from_filename(img_path)
+                                if track_id:
+                                    track_to_dk_groups[track_id].add(dk_group_key)
+                                break
+                            break
 
         # Merge DK groups that share tracks
+        # If the same track has faces from multiple DK groups, they're the same person
         groups_to_merge: List[Set[str]] = []
-        processed_labels = set()
 
-        for track_key, labels in track_to_dk_label.items():
-            if len(labels) > 1:
-                # This track has multiple DK labels - they should be the same person
-                # Merge all labels into one group
-                merge_set = set(labels)
-                groups_to_merge.append(merge_set)
+        for track_id, group_keys in track_to_dk_groups.items():
+            if len(group_keys) > 1:
+                # This track has faces from multiple DK groups - merge them
+                groups_to_merge.append(group_keys)
 
         # Perform merges
+        track_merges = 0
         for merge_set in groups_to_merge:
-            # Use the smallest label as the target
-            target_label = min(merge_set)
+            # Use the smallest key as the target
+            target_key = min(merge_set)
             faces_to_add = set()
 
-            for label in merge_set:
-                if label != target_label:
-                    faces_to_add.update(dk_groups.get(label, set()))
+            for group_key in merge_set:
+                if group_key != target_key:
+                    faces_to_add.update(dk_groups.get(group_key, set()))
 
-            dk_groups[target_label].update(faces_to_add)
+            dk_groups[target_key].update(faces_to_add)
 
-            # Remove old labels
-            for label in merge_set:
-                if label != target_label and label in dk_groups:
-                    del dk_groups[label]
+            # Remove old keys
+            for group_key in merge_set:
+                if group_key != target_key and group_key in dk_groups:
+                    del dk_groups[group_key]
+
+            track_merges += len(merge_set) - 1
+
+        if track_merges > 0:
+            logger.info(f"  Track-based linking: merged {track_merges} DK groups")
 
         # Step 3: Embedding-based linking for DK groups with no track overlap
-        # Compute centroids for each DK group
+        # Compute centroids and scene info for each DK group
+        # Use face weights to down-weight poor quality faces marked with @poor, @blurry, etc.
         dk_centroids: Dict[str, np.ndarray] = {}
+        dk_scene_info: Dict[str, List[str]] = defaultdict(list)  # {dk_label: [scene_ids]}
 
         for dk_label, face_ids in dk_groups.items():
-            embeddings = []
+            weighted_embeddings = []
+            weights = []
             for face_id in face_ids:
-                # Find embedding for this face
+                # Get weight for this face (0.5 for poor quality, 1.0 for normal)
+                weight = self.face_weights.get(face_id, 1.0)
+
+                # Find embedding and scene for this face
                 for scene_id, faces in self.clustering_data.items():
                     for face_data in faces:
                         if face_data['unique_face_id'] == face_id:
                             if face_data.get('embeddings'):
-                                embeddings.extend([np.array(e) for e in face_data['embeddings']])
+                                for emb in face_data['embeddings']:
+                                    weighted_embeddings.append(np.array(emb) * weight)
+                                    weights.append(weight)
+                            dk_scene_info[dk_label].append(scene_id)
                             break
 
-            if embeddings:
-                dk_centroids[dk_label] = np.mean(embeddings, axis=0)
+            if weighted_embeddings and weights:
+                # Weighted average: sum(weighted_embeddings) / sum(weights)
+                total_weight = sum(weights)
+                dk_centroids[dk_label] = np.sum(weighted_embeddings, axis=0) / total_weight
 
-        # Link DK groups via embedding similarity
+        # Link DK groups via embedding similarity with scene proximity weighting
         dk_labels = list(dk_centroids.keys())
         merged = set()
 
@@ -555,6 +808,28 @@ class ClusterRefiner:
                 else:
                     similarity = np.dot(centroid_a, centroid_b) / (norm_a * norm_b)
 
+                # Apply scene proximity weighting
+                # Calculate minimum scene distance between the two DK groups
+                scenes_a = dk_scene_info.get(label_a, [])
+                scenes_b = dk_scene_info.get(label_b, [])
+
+                if scenes_a and scenes_b:
+                    # Find minimum distance between any scene in group A and any scene in group B
+                    min_distance = min(
+                        self._get_scene_distance(s_a, s_b)
+                        for s_a in scenes_a
+                        for s_b in scenes_b
+                    )
+                    weighted_similarity = self._compute_scene_weighted_similarity(similarity, min_distance)
+
+                    if weighted_similarity > similarity:
+                        logger.debug(
+                            f"    Scene proximity bonus: {label_a} vs {label_b}, "
+                            f"distance={min_distance}, {similarity:.4f} -> {weighted_similarity:.4f}"
+                        )
+
+                    similarity = weighted_similarity
+
                 if similarity > dk_threshold:
                     # Merge the groups
                     dk_groups[label_a].update(dk_groups[label_b])
@@ -562,6 +837,10 @@ class ClusterRefiner:
                     merged.add(label_b)
 
         # Update statistics
+        embedding_merges = len(merged)
+        if embedding_merges > 0:
+            logger.info(f"  Embedding-based linking: merged {embedding_merges} DK groups")
+
         self.stats['dk_groups_linked'] = len(dk_groups)
 
         logger.info(f"  Linked into {len(dk_groups)} DK groups")

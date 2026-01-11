@@ -17,3 +17,7 @@ SKIP_LABELS = [
 
 # DK label prefix for unknown/uncertain faces
 DK_LABEL_PREFIX = 'dk'
+
+# Quality modifiers for faces (can be combined with other labels)
+# These faces are down-weighted during refinement due to poor quality
+QUALITY_MODIFIERS = {'@poor', '@profile', '@back', '@dark', '@blurry'}

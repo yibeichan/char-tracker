@@ -19,7 +19,7 @@ def save2json(data, output_file):
         print(f"Error writing to file {output_file}: {e}")
         sys.exit(1)
 
-def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=True):
+def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=True, diverse_frames=True):
 
     scene_file = os.path.join(scratch_dir, "output", "scene_detection", f"{video_name}.txt")
     face_detection_file = os.path.join(scratch_dir, "output", "face_detection", f"{video_name}.json")
@@ -46,7 +46,10 @@ def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=Tru
 
     # Initialize the tracker and selector
     face_tracker = FaceTracker(**tracker_kwargs)
-    frame_selector = FrameSelector(video_file=video_file, top_n=3, output_dir=output_dir)
+    frame_selector = FrameSelector(video_file=video_file, top_n=3, output_dir=output_dir, diverse_frames=diverse_frames)
+
+    if diverse_frames:
+        print("Using diversity-aware frame selection (temporal segments for better clustering)")
 
     # Track faces across scenes
     tracked_faces = face_tracker.track_faces_across_scenes(scene_data, face_data)
@@ -78,6 +81,8 @@ if __name__ == "__main__":
                        help='Use only most recent detection (simpler, faster).')
     parser.add_argument('--no-sequential', action='store_true',
                        help='Disable optimized sequential frame reading (use legacy random-seek method)')
+    parser.add_argument('--no-diverse-frames', dest='diverse_frames', action='store_false', default=True,
+                       help='Disable diversity-aware frame selection (pick best quality only)')
 
     args = parser.parse_args()
     video_name = args.video_name
@@ -94,4 +99,4 @@ if __name__ == "__main__":
         "use_median_box": args.use_median_box
     }
 
-    main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=not args.no_sequential)
+    main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=not args.no_sequential, diverse_frames=args.diverse_frames)
