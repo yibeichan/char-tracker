@@ -1,122 +1,128 @@
+"""
+Face clustering module for character tracking.
+
+This module provides:
+- FaceEmbedder: Extracts face embeddings using InsightFace buffalo_l model
+- FaceClusterer: Clusters faces using Chinese Whispers algorithm
+
+Note: This module now exclusively uses the InsightFace buffalo_l model
+for better accuracy and performance.
+"""
+
 import os
 import cv2
-import torch
 import numpy as np
 import networkx as nx
 from tqdm import tqdm
 from scipy.spatial.distance import cosine, cdist
-from facenet_pytorch import InceptionResnetV1
-from torch.utils.data import Dataset, DataLoader
+
 
 class FaceEmbedder:
-    def __init__(self, model=None, device=None, model_name='vggface2'):
+    """
+    Extracts face embeddings using InsightFace buffalo_l model.
+
+    The buffalo_l model uses ArcFace loss and produces 512-dimensional embeddings.
+    Input images should be 112x112 BGR format (uint8, 0-255).
+    """
+
+    def __init__(self, device=None):
         """
-        Initialize FaceEmbedder with configurable model.
+        Initialize FaceEmbedder with InsightFace buffalo_l model.
 
         Args:
-            model: Pre-initialized model (optional)
-            device: torch.device (optional, auto-detects CUDA)
-            model_name: Model to use. Options:
-                - 'vggface2': InceptionResnetV1 (512-dim, 160x160 input)
-                - 'buffalo_l': InsightFace buffalo_l with ArcFace (512-dim, 112x112 input)
+            device: 'cuda' for GPU, 'cpu' for CPU (auto-detected if None)
         """
-        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model_name = model_name
+        # Determine device
+        if device is None:
+            try:
+                import torch
+                self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            except ImportError:
+                self.device = 'cpu'
+        else:
+            self.device = device
 
-        if model is not None:
-            self.model = model
-        elif model_name == 'buffalo_l':
-            # Use insightface for embeddings
-            import insightface
-            from insightface.app import FaceAnalysis
+        # Import insightface and initialize model
+        import insightface
+        from insightface.app import FaceAnalysis
 
-            # Determine available providers with graceful fallback
-            if self.device.type == 'cuda':
-                try:
-                    import onnxruntime as ort
-                    available_providers = ort.get_available_providers()
-                    if 'CUDAExecutionProvider' in available_providers:
-                        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-                    else:
-                        print("Warning: CUDA requested but CUDAExecutionProvider not available. "
-                              "Falling back to CPU. Install onnxruntime-gpu for GPU acceleration.")
-                        providers = ['CPUExecutionProvider']
-                except ImportError:
+        # Determine available providers with graceful fallback
+        if self.device == 'cuda':
+            try:
+                import onnxruntime as ort
+                available_providers = ort.get_available_providers()
+                if 'CUDAExecutionProvider' in available_providers:
+                    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                else:
+                    print("Warning: CUDA requested but CUDAExecutionProvider not available. "
+                          "Falling back to CPU. Install onnxruntime-gpu for GPU acceleration.")
                     providers = ['CPUExecutionProvider']
-            else:
+            except ImportError:
                 providers = ['CPUExecutionProvider']
-
-            # Use FaceAnalysis with only recognition enabled
-            self.model = FaceAnalysis(name='buffalo_l', providers=providers)
-            self.model.prepare(ctx_id=0 if self.device.type == 'cuda' and 'CUDAExecutionProvider' in providers else -1,
-                             det_size=(640, 640))
-            # Store recognition model reference for direct embedding extraction
-            # (bypasses face detection which fails on pre-cropped faces)
-            self.rec_model = self.model.models.get('recognition')
         else:
-            # Default to InceptionResnetV1
-            self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+            providers = ['CPUExecutionProvider']
 
-        # Set input size and embedding dimension based on model
-        if model_name == 'buffalo_l':
-            self.input_size = (112, 112)
-            self.embedding_dim = 512  # buffalo_l uses 512-dim embeddings
-        else:
-            self.input_size = (160, 160)
-            self.embedding_dim = 512
-            self.normalization = lambda x: (x - 127.5) / 128.0  # Only used for vggface2
+        # Initialize FaceAnalysis with buffalo_l
+        self.model = FaceAnalysis(name='buffalo_l', providers=providers)
+        self.model.prepare(
+            ctx_id=0 if self.device == 'cuda' and 'CUDAExecutionProvider' in providers else -1,
+            det_size=(640, 640)
+        )
+
+        # Store recognition model reference for direct embedding extraction
+        # (bypasses face detection which fails on pre-cropped faces)
+        self.rec_model = self.model.models.get('recognition')
+
+        # buffalo_l configuration
+        self.input_size = (112, 112)
+        self.embedding_dim = 512
 
     def load_image(self, image_path):
-        """Load an image from disk and convert it to a tensor."""
+        """Load an image from disk."""
         image = cv2.imread(image_path)
         if image is None:
             raise ValueError(f"Error loading image: {image_path}")
-        
-        # Optionally preprocess image if needed (resize, etc.)
-        face_tensor = self.preprocess_face(image)
-        return face_tensor
+        return self.preprocess_face(image)
 
     def preprocess_face(self, face_image):
-        """Preprocess the face image for embedding extraction (resize, color conversion, normalize)."""
-        face_image = cv2.resize(face_image, self.input_size)
+        """
+        Preprocess face image for embedding extraction.
 
-        if self.model_name == 'buffalo_l':
-            # insightface expects raw BGR numpy arrays (uint8, 0-255)
-            # Just resize - InsightFace handles normalization internally
-            return face_image  # Return uint8 BGR image directly
-        else:
-            # PyTorch model expects normalized RGB tensor
-            face_image = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-            face_tensor = torch.tensor(face_image).permute(2, 0, 1).float().unsqueeze(0).to(self.device)
-            face_tensor = self.normalization(face_tensor)
-            return face_tensor
+        Args:
+            face_image: BGR image from cv2.imread
+
+        Returns:
+            Preprocessed image (112x112 BGR uint8)
+        """
+        return cv2.resize(face_image, self.input_size)
 
     def get_face_embeddings(self, selected_frames, image_dir):
-        """Get embeddings for each cropped face image."""
+        """
+        Get embeddings for each cropped face image (sequential processing).
+
+        Args:
+            selected_frames: Dictionary of selected frames per scene
+            image_dir: Directory containing face images
+
+        Returns:
+            List of face embeddings with metadata
+        """
         face_embeddings = []
 
-        # Initialize progress bar
         with tqdm(total=len(selected_frames), desc="Extracting Face Embeddings", unit="face") as pbar:
             for scene_id, faces in selected_frames.items():
                 for face_data in faces:
                     embeddings = []
                     for frame_info in face_data['top_frames']:
-                        image_path = os.path.join(image_dir, frame_info['image_path'])  # Construct full path to image
+                        image_path = os.path.join(image_dir, frame_info['image_path'])
                         face_tensor = self.load_image(image_path)
 
-                        if self.model_name == 'buffalo_l':
-                            # face_tensor is already preprocessed (resized to 112x112, BGR, uint8)
-                            # Use recognition model directly to bypass face detection
-                            # (FaceAnalysis.get() runs detection which fails on pre-cropped faces)
-                            try:
-                                embedding = self.rec_model.get_feat(face_tensor).flatten()
-                            except Exception:
-                                # On failure, return NaN embeddings (consistent with vggface2 handling)
-                                embedding = np.full((512,), np.nan, dtype=np.float32)
-                        else:
-                            # PyTorch model
-                            with torch.no_grad():
-                                embedding = self.model(face_tensor).cpu().numpy()
+                        # Use recognition model directly (bypasses face detection)
+                        try:
+                            embedding = self.rec_model.get_feat(face_tensor).flatten()
+                        except Exception:
+                            # Return NaN embeddings on failure
+                            embedding = np.full((self.embedding_dim,), np.nan, dtype=np.float32)
 
                         embeddings.append({
                             "frame_idx": frame_info['frame_idx'],
@@ -128,174 +134,29 @@ class FaceEmbedder:
                         "scene_id": scene_id,
                         "unique_face_id": face_data['unique_face_id'],
                         "global_face_id": face_data['global_face_id'],
-                        "embeddings": embeddings  # Each embedding with its image path
+                        "embeddings": embeddings
                     })
 
-                    # Update progress bar
                     pbar.update(1)
 
         return face_embeddings
 
-    def get_face_embeddings_batch(self, selected_frames, image_dir, batch_size=32, num_workers=0):
-        """
-        Get embeddings for each cropped face image using batch processing.
-
-        This method is optimized for GPU utilization by processing multiple images
-        at once instead of one-by-one.
-
-        Args:
-            selected_frames: Dictionary of selected frames per scene
-            image_dir: Directory containing face images
-            batch_size: Number of images to process in each batch (default: 32)
-            num_workers: Number of worker processes for data loading (default: 0).
-                        Note: num_workers > 0 with CUDA can cause issues in some environments.
-
-        Returns:
-            List of face embeddings with metadata
-        """
-        if self.model_name == 'buffalo_l':
-            # insightface doesn't support batching in the same way, fall back to sequential
-            print("Note: insightface buffalo_l using sequential processing (batch not supported)")
-            return self.get_face_embeddings(selected_frames, image_dir)
-
-        # Create dataset and dataloader (preprocessing on CPU)
-        dataset = FaceImageDataset(selected_frames, image_dir, self.input_size, self.normalization)
-        dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=True if self.device.type == 'cuda' else False
-        )
-
-        # Process batches
-        all_embeddings = []
-
-        with torch.no_grad():
-            for batch_tensors, scene_ids, unique_face_ids, frame_idxs, image_paths in tqdm(
-                dataloader, desc="Extracting Face Embeddings (Batched)", unit="batch"
-            ):
-                # Move batch to GPU
-                batch_tensors = batch_tensors.to(self.device)
-
-                # Get embeddings for entire batch
-                batch_embeddings = self.model(batch_tensors).cpu().numpy()
-
-                # Store embeddings with metadata
-                for i, embedding in enumerate(batch_embeddings):
-                    all_embeddings.append({
-                        'embedding': embedding,
-                        'metadata': {
-                            'scene_id': scene_ids[i],
-                            'unique_face_id': unique_face_ids[i],
-                            'frame_idx': frame_idxs[i].item() if hasattr(frame_idxs[i], 'item') else frame_idxs[i],
-                            'image_path': image_paths[i]
-                        }
-                    })
-
-        # Reconstruct the hierarchical structure
-        return self._reconstruct_embedding_structure(all_embeddings, selected_frames)
-
-    def _reconstruct_embedding_structure(self, flat_embeddings, selected_frames):
-        """
-        Reconstruct the hierarchical structure of embeddings from flat list.
-
-        Args:
-            flat_embeddings: Flat list of embeddings with metadata
-            selected_frames: Original selected_frames dictionary for structure
-
-        Returns:
-            Embeddings in the same structure as get_face_embeddings()
-        """
-        face_embeddings = []
-        embedding_idx = 0
-
-        for scene_id, faces in selected_frames.items():
-            for face_data in faces:
-                embeddings = []
-                for frame_info in face_data['top_frames']:
-                    emb_data = flat_embeddings[embedding_idx]
-                    embeddings.append({
-                        "frame_idx": frame_info['frame_idx'],
-                        "embedding": emb_data['embedding'],
-                        "image_path": frame_info['image_path']
-                    })
-                    embedding_idx += 1
-
-                face_embeddings.append({
-                    "scene_id": scene_id,
-                    "unique_face_id": face_data['unique_face_id'],
-                    "global_face_id": face_data['global_face_id'],
-                    "embeddings": embeddings
-                })
-
-        return face_embeddings
-
-class FaceImageDataset(Dataset):
-    """
-    PyTorch Dataset for loading face images in batches.
-
-    This dataset flattens the hierarchical structure of faces/frames into a single
-    list for efficient batch processing.
-    """
-    def __init__(self, selected_frames, image_dir, input_size=(160, 160), normalization=None):
-        """
-        Args:
-            selected_frames: Dictionary of selected frames per scene
-            image_dir: Directory containing face images
-            input_size: Tuple of (width, height) for resizing
-            normalization: Function to normalize tensors
-        """
-        self.image_dir = image_dir
-        self.input_size = input_size
-        self.normalization = normalization or (lambda x: (x - 127.5) / 128.0)
-
-        # Flatten all image paths with metadata
-        self.image_items = []
-        for scene_id, faces in selected_frames.items():
-            for face_data in faces:
-                for frame_info in face_data['top_frames']:
-                    self.image_items.append({
-                        'image_path': os.path.join(image_dir, frame_info['image_path']),
-                        'scene_id': scene_id,
-                        'unique_face_id': face_data['unique_face_id'],
-                        'frame_idx': frame_info['frame_idx']
-                    })
-
-    def __len__(self):
-        return len(self.image_items)
-
-    def __getitem__(self, idx):
-        """
-        Load and preprocess a single image on CPU.
-
-        Returns:
-            tuple: (preprocessed_tensor, metadata_dict)
-        """
-        item = self.image_items[idx]
-
-        # Load image
-        image = cv2.imread(item['image_path'])
-        if image is None:
-            raise ValueError(f"Error loading image: {item['image_path']}")
-
-        # Preprocess on CPU (resize, BGR->RGB, normalize) - GPU transfer happens in main loop
-        face_image = cv2.cvtColor(cv2.resize(image, self.input_size), cv2.COLOR_BGR2RGB)
-        face_tensor = torch.tensor(face_image).permute(2, 0, 1).float()
-        face_tensor = self.normalization(face_tensor)
-
-        # Return tensor and metadata (as individual values for proper collation)
-        return face_tensor, item['scene_id'], item['unique_face_id'], item['frame_idx'], item['image_path']
 
 class FaceClusterer:
+    """
+    Clusters faces using Chinese Whispers algorithm on a similarity graph.
+
+    Uses cosine similarity threshold to build edges between similar face embeddings.
+    """
+
     def __init__(self, similarity_threshold: float = 0.6, max_iterations: int = 100, min_scenes: int = 2):
         """
         Initialize FaceClusterer.
 
         Args:
-            similarity_threshold: Minimum cosine similarity to create edge between embeddings
-            max_iterations: Maximum iterations for Chinese Whispers algorithm
-            min_scenes: Minimum number of unique scenes required for a valid cluster.
+            similarity_threshold: Minimum cosine similarity to create edge (default: 0.6)
+            max_iterations: Maximum iterations for Chinese Whispers (default: 100)
+            min_scenes: Minimum unique scenes required for a valid cluster.
                        Clusters with fewer scenes are merged into nearest valid cluster.
                        Set to 1 to disable merging.
         """
@@ -304,7 +165,11 @@ class FaceClusterer:
         self.min_scenes = min_scenes
 
     def build_graph(self, face_embeddings):
-        """Builds a graph where nodes represent embeddings, and edges represent similarities (vectorized)."""
+        """
+        Build similarity graph where nodes are embeddings and edges represent similarities.
+
+        Uses vectorized cdist for efficient pairwise distance computation.
+        """
         G = nx.Graph()
 
         # Flatten embeddings with identifiers into node_data
@@ -316,14 +181,15 @@ class FaceClusterer:
 
         # Add nodes to the graph
         for i, (face_idx, embedding, face_data, frame_idx, image_path) in enumerate(node_data):
-            G.add_node(i, face_idx=face_idx, embedding=embedding, face_data=face_data, frame_idx=frame_idx, image_path=image_path)
+            G.add_node(i, face_idx=face_idx, embedding=embedding, face_data=face_data,
+                      frame_idx=frame_idx, image_path=image_path)
 
-        # Guard against empty embeddings (no faces detected)
+        # Guard against empty embeddings
         if len(node_data) == 0:
             print("No face embeddings to cluster. Returning empty graph.")
             return G, node_data
 
-        # Vectorized similarity computation using cdist (MUCH faster)
+        # Vectorized similarity computation using cdist
         print(f"Computing pairwise similarities for {len(node_data)} embeddings...")
         embeddings_matrix = np.array([n[1].flatten() for n in node_data])
 
@@ -335,21 +201,24 @@ class FaceClusterer:
         rows, cols = np.where(np.triu(similarities, k=1) > self.similarity_threshold)
         edges = [(r, c, similarities[r, c]) for r, c in zip(rows, cols)]
         G.add_weighted_edges_from(edges)
-        edge_count = len(edges)
 
-        print(f"Added {edge_count} edges based on similarity threshold {self.similarity_threshold}")
+        print(f"Added {len(edges)} edges based on similarity threshold {self.similarity_threshold}")
 
         return G, node_data
 
     def apply_chinese_whispers(self, G: nx.Graph) -> dict:
-        """Runs the Chinese Whispers algorithm on the similarity graph with convergence check."""
+        """
+        Run Chinese Whispers clustering algorithm on the similarity graph.
+
+        Uses convergence detection to stop early if labels stop changing.
+        """
         labels = {node: i for i, node in enumerate(G.nodes())}
 
         with tqdm(total=self.max_iterations, desc="Running Chinese Whispers", unit="iteration") as pbar:
             for iteration in range(self.max_iterations):
                 nodes = list(G.nodes())
                 np.random.shuffle(nodes)
-                
+
                 labels_changed = False
                 for node in nodes:
                     neighbor_labels = [labels[neighbor] for neighbor in G.neighbors(node)]
@@ -359,115 +228,103 @@ class FaceClusterer:
                         if labels[node] != most_common_label:
                             labels[node] = most_common_label
                             labels_changed = True
-                
+
                 # Check for convergence
                 if not labels_changed:
                     print(f"Converged after {iteration + 1} iterations.")
                     break
-                
+
                 pbar.update(1)
-        
+
         return labels
 
     def consolidate_clusters(self, initial_clusters: dict) -> dict:
-        """Consolidate clusters by assigning each face to the best cluster among its initial assignments."""
+        """
+        Consolidate clusters by assigning each face to the best cluster.
+
+        For each unique_face_id, considers only the clusters it was assigned to
+        and assigns it to the cluster with highest average similarity.
+        """
         # Map to hold the best cluster assignment for each unique_face_id
         face_best_assignment = {}
         face_embeddings = {}
         face_data_map = {}
-        
+
         # Step 1: Collect all clusters and embeddings for each unique_face_id
         for cluster_id, face_list in initial_clusters.items():
             for face_data in face_list:
                 unique_face_id = face_data['unique_face_id']
                 embedding = face_data['embedding']
-                
+
                 if unique_face_id not in face_embeddings:
                     face_embeddings[unique_face_id] = []
                     face_data_map[unique_face_id] = []
                 face_embeddings[unique_face_id].append(embedding)
                 face_data_map[unique_face_id].append((cluster_id, face_data))
-        
-        # Step 2: For each unique_face_id, consider only the clusters it was assigned to
+
+        # Step 2: For each unique_face_id, find the best cluster
         for unique_face_id, embeddings in face_embeddings.items():
             assigned_clusters = set(cluster_id for cluster_id, _ in face_data_map[unique_face_id])
-            print(f"Unique Face ID: {unique_face_id}, Assigned Clusters: {assigned_clusters}")
+
             if len(assigned_clusters) == 1:
-                # All embeddings assigned to the same cluster, no need to compute similarities
-                best_cluster_id = next(iter(assigned_clusters))
+                face_best_assignment[unique_face_id] = next(iter(assigned_clusters))
             else:
                 embeddings = np.array(embeddings)
                 if embeddings.ndim == 3 and embeddings.shape[1] == 1:
                     embeddings = embeddings.reshape(embeddings.shape[0], embeddings.shape[2])
-                
-                # Ensure embeddings is a 2D array
+
                 if embeddings.ndim == 1:
                     embeddings = embeddings.reshape(1, -1)
-                
+
                 max_avg_similarity = -1
                 best_cluster_id = None
-                
+
                 for cluster_id in assigned_clusters:
-                    # Get embeddings of the cluster
                     cluster_embeddings = []
                     for face_data in initial_clusters[cluster_id]:
                         cluster_embeddings.append(face_data['embedding'])
                     cluster_embeddings = np.array(cluster_embeddings)
-                    
-                    # Reshape cluster_embeddings if necessary
+
                     if cluster_embeddings.ndim == 3 and cluster_embeddings.shape[1] == 1:
                         cluster_embeddings = cluster_embeddings.reshape(cluster_embeddings.shape[0], cluster_embeddings.shape[2])
-                    
-                    # Ensure cluster_embeddings is a 2D array
+
                     if cluster_embeddings.ndim == 1:
                         cluster_embeddings = cluster_embeddings.reshape(1, -1)
-                    
-                    # Step 3: Compute average similarity between face embeddings and cluster embeddings
+
                     similarities = 1 - cdist(embeddings, cluster_embeddings, 'cosine')
                     avg_similarity = np.mean(similarities)
-                    
+
                     if avg_similarity > max_avg_similarity:
                         max_avg_similarity = avg_similarity
                         best_cluster_id = cluster_id
-            
-            # Assign the face to the best cluster
-            face_best_assignment[unique_face_id] = best_cluster_id
-        
-        # Step 4: Build consolidated clusters based on best assignments
+
+                face_best_assignment[unique_face_id] = best_cluster_id
+
+        # Step 3: Build consolidated clusters
         consolidated_clusters = {}
         for unique_face_id, best_cluster_id in face_best_assignment.items():
             if best_cluster_id not in consolidated_clusters:
                 consolidated_clusters[best_cluster_id] = []
-            
-            # Add all face_data instances for this unique_face_id to the best cluster
+
             for cluster_id, face_data in face_data_map[unique_face_id]:
-                # Avoid duplicates
                 if face_data not in consolidated_clusters[best_cluster_id]:
                     consolidated_clusters[best_cluster_id].append(face_data)
-        
+
         return consolidated_clusters
 
     def merge_isolated_clusters(self, clusters: dict) -> dict:
         """
-        Merge clusters that contain faces from only a single scene into
-        the nearest valid (multi-scene) cluster based on embedding similarity.
+        Merge single-scene clusters into the nearest valid multi-scene cluster.
 
-        This eliminates inefficient small clusters where a face appears in only
-        one scene and doesn't match well with other faces.
-
-        Args:
-            clusters: Dict mapping cluster_id -> list of face_data dicts
-
-        Returns:
-            Dict with isolated clusters merged into nearest valid clusters
+        Clusters with fewer than min_scenes unique scenes are merged into
+        the most similar valid cluster based on centroid similarity.
         """
         if self.min_scenes <= 1:
-            # Merging disabled
             return clusters
 
-        # Step 1: Categorize clusters by scene count
-        valid_clusters = {}  # cluster_id -> face_list (has >= min_scenes unique scenes)
-        isolated_clusters = {}  # cluster_id -> face_list (has < min_scenes unique scenes)
+        # Categorize clusters by scene count
+        valid_clusters = {}
+        isolated_clusters = {}
 
         for cluster_id, face_list in clusters.items():
             unique_scenes = set(face['scene_id'] for face in face_list)
@@ -479,24 +336,21 @@ class FaceClusterer:
         print(f"Cross-scene validation: {len(valid_clusters)} valid clusters, "
               f"{len(isolated_clusters)} isolated clusters to merge")
 
-        # Edge case: if no valid clusters exist, keep all clusters as-is
         if not valid_clusters:
             print("Warning: No valid clusters found. Keeping all clusters unchanged.")
             return clusters
 
-        # Step 2: Compute centroid embedding for each valid cluster
+        # Compute centroids for valid clusters
         valid_centroids = {}
         for cluster_id, face_list in valid_clusters.items():
             embeddings = np.array([face['embedding'].flatten() for face in face_list])
             valid_centroids[cluster_id] = np.mean(embeddings, axis=0)
 
-        # Step 3: Merge each isolated cluster into the nearest valid cluster
+        # Merge each isolated cluster into nearest valid cluster
         for isolated_id, isolated_faces in isolated_clusters.items():
-            # Compute centroid of isolated cluster
             isolated_embeddings = np.array([face['embedding'].flatten() for face in isolated_faces])
             isolated_centroid = np.mean(isolated_embeddings, axis=0)
 
-            # Find nearest valid cluster by cosine similarity
             best_cluster_id = None
             best_similarity = -1
 
@@ -506,26 +360,28 @@ class FaceClusterer:
                     best_similarity = similarity
                     best_cluster_id = valid_id
 
-            # Merge isolated faces into the best matching valid cluster
             if best_cluster_id is not None:
                 valid_clusters[best_cluster_id].extend(isolated_faces)
-                # Get scene info for logging
                 isolated_scenes = set(face['scene_id'] for face in isolated_faces)
                 print(f"Merged isolated cluster {isolated_id} ({list(isolated_scenes)}) "
                       f"into cluster {best_cluster_id} (similarity={best_similarity:.3f})")
 
         return valid_clusters
 
-    def _max_similarity(self, face_list: list, embedding: np.ndarray) -> float:
-        """Helper function to calculate the maximum similarity of an embedding with a list of faces."""
-        similarities = similarities = [1 - cosine(face['embedding'].flatten(), embedding.flatten()) for face in face_list]
-        return max(similarities)
-
     def cluster_faces(self, face_embeddings: list) -> dict:
-        """Cluster faces based on their embeddings using Chinese Whispers."""
+        """
+        Cluster faces based on their embeddings using Chinese Whispers.
+
+        Args:
+            face_embeddings: List of face embeddings with metadata
+
+        Returns:
+            Dictionary mapping cluster_id to list of face data
+        """
         G, node_data = self.build_graph(face_embeddings)
         labels = self.apply_chinese_whispers(G)
 
+        # Build initial clusters
         initial_clusters = {}
         for node_idx, label in labels.items():
             face_data = node_data[node_idx][2]
@@ -534,15 +390,16 @@ class FaceClusterer:
 
             if label not in initial_clusters:
                 initial_clusters[label] = []
-            
+
             initial_clusters[label].append({
                 "scene_id": face_data['scene_id'],
                 "unique_face_id": face_data['unique_face_id'],
                 "global_face_id": face_data['global_face_id'],
                 "frame_idx": frame_idx,
-                "image_path": image_path,  # Include image path in the cluster data
+                "image_path": image_path,
                 "embedding": node_data[node_idx][1]
             })
 
+        # Consolidate and merge
         consolidated = self.consolidate_clusters(initial_clusters)
         return self.merge_isolated_clusters(consolidated)

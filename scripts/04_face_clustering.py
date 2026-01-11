@@ -56,7 +56,7 @@ def match_clusters_with_unique_faces(clustered_faces, unique_faces_per_scene):
 def read_json(file_path):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
-    
+
     with open(file_path, 'r') as f:
         data = json.load(f)
     return data
@@ -71,7 +71,7 @@ def save_json(data, output_file):
         elif isinstance(obj, (np.float64, np.float32)):
             return float(obj)
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
-    
+
     try:
         with open(output_file, 'w') as f:
             json.dump(data, f, indent=4, default=convert_np)
@@ -80,26 +80,38 @@ def save_json(data, output_file):
         sys.exit(1)
 
 
-def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size=32, num_workers=0, model_name='vggface2', similarity_threshold=0.6, min_scenes=2):
-    face_embedder = FaceEmbedder(model_name=model_name)
-    face_clusterer = FaceClusterer(similarity_threshold=similarity_threshold, max_iterations=100, min_scenes=min_scenes)
+def main(video_name, face_selection_file, output_dir,
+         similarity_threshold=0.6, min_scenes=2):
+    """
+    Run face clustering using buffalo_l model.
+
+    Args:
+        video_name: Name of the input video file without extension
+        face_selection_file: Path to face selection JSON
+        output_dir: Directory for output files
+        similarity_threshold: Cosine similarity threshold for clustering (default: 0.6)
+        min_scenes: Minimum scenes required for a valid cluster (default: 2)
+    """
+    face_embedder = FaceEmbedder()
+    face_clusterer = FaceClusterer(
+        similarity_threshold=similarity_threshold,
+        max_iterations=100,
+        min_scenes=min_scenes
+    )
     print(f"Clustering with similarity_threshold={similarity_threshold}, min_scenes={min_scenes}")
 
     selected_faces = read_json(face_selection_file)
     image_dir = os.path.dirname(face_selection_file)
 
-    # Use batch processing for better GPU utilization (2-4x faster)
-    if use_batch:
-        print(f"Using batch processing with batch_size={batch_size}, num_workers={num_workers}")
-        face_embeddings = face_embedder.get_face_embeddings_batch(
-            selected_faces, image_dir, batch_size=batch_size, num_workers=num_workers
-        )
-    else:
-        print("Using sequential processing (slower)")
-        face_embeddings = face_embedder.get_face_embeddings(selected_faces, image_dir)
+    # Extract embeddings
+    print("Extracting face embeddings...")
+    face_embeddings = face_embedder.get_face_embeddings(selected_faces, image_dir)
 
+    # Cluster faces
+    print("Clustering faces...")
     consolidated_clusters = face_clusterer.cluster_faces(face_embeddings)
 
+    # Match clusters with unique faces
     matched_faces = match_clusters_with_unique_faces(consolidated_clusters, selected_faces)
 
     output_file = os.path.join(output_dir, f'{video_name}_matched_faces_with_clusters.json')
@@ -107,18 +119,10 @@ def main(video_name, face_selection_file, output_dir, use_batch=True, batch_size
 
     print("Processing complete!")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Face Clustering with Embeddings')
+    parser = argparse.ArgumentParser(description='Face Clustering with Embeddings (buffalo_l model)')
     parser.add_argument('video_name', type=str, help='Name of the input video file without extension.')
-    parser.add_argument('--no-batch', action='store_true',
-                       help='Disable batch processing (use sequential processing)')
-    parser.add_argument('--batch-size', type=int, default=32,
-                       help='Batch size for embedding extraction (default: 32)')
-    parser.add_argument('--num-workers', type=int, default=0,
-                       help='Number of data loading workers (default: 0, recommended for CUDA)')
-    parser.add_argument('--model-name', type=str, default='vggface2',
-                       choices=['vggface2', 'buffalo_l'],
-                       help='Embedding model to use (default: vggface2)')
     parser.add_argument('--similarity-threshold', type=float, default=0.6,
                        help='Cosine similarity threshold for clustering (default: 0.6). Lower values create fewer, larger clusters.')
     parser.add_argument('--min-scenes', type=int, default=2,
@@ -132,14 +136,11 @@ if __name__ == "__main__":
     load_dotenv()
     scratch_dir = os.getenv("SCRATCH_DIR")
 
-    face_selection_file = os.path.join(scratch_dir, "output", "face_tracking", f"{video_name}", f"{video_name}_selected_frames_per_face.json")
+    face_selection_file = os.path.join(scratch_dir, "output", "face_tracking",
+                                       f"{video_name}", f"{video_name}_selected_frames_per_face.json")
     output_dir = os.path.join(scratch_dir, "output", "face_clustering")
     os.makedirs(output_dir, exist_ok=True)
 
     main(video_name, face_selection_file, output_dir,
-         use_batch=not args.no_batch,
-         batch_size=args.batch_size,
-         num_workers=args.num_workers,
-         model_name=args.model_name,
          similarity_threshold=args.similarity_threshold,
          min_scenes=args.min_scenes)
