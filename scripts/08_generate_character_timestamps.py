@@ -38,7 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import shared constants
-import constants as constants
+import constants
 MAIN_CHARACTERS = constants.MAIN_CHARACTERS
 SKIP_LABELS = constants.SKIP_LABELS
 
@@ -72,7 +72,7 @@ def build_cluster_to_character_mapping(annotations: dict) -> Dict[str, str]:
         annotations: Annotation JSON from ClusterMark or refined output
 
     Returns:
-        dict: {cluster_id: character_name} where cluster_id can be string or int
+        dict: {cluster_id: character_name} where cluster_id is always string (normalized)
     """
     cluster_to_char = {}
 
@@ -123,7 +123,7 @@ def build_cluster_to_character_mapping(annotations: dict) -> Dict[str, str]:
 
 def build_track_to_character_mapping(
     refined_clustering: dict,
-    cluster_to_char: Dict[int, str]
+    cluster_to_char: Dict[str, str]
 ) -> Dict[str, str]:
     """
     Build mapping from track (unique_face_id) to character name.
@@ -143,8 +143,10 @@ def build_track_to_character_mapping(
             unique_face_id = face_data['unique_face_id']
             cluster_id = face_data.get('cluster_id')
 
-            if cluster_id in cluster_to_char:
-                track_to_char[unique_face_id] = cluster_to_char[cluster_id]
+            # Normalize cluster_id to string for lookup
+            cluster_key = str(cluster_id) if cluster_id is not None else None
+            if cluster_key and cluster_key in cluster_to_char:
+                track_to_char[unique_face_id] = cluster_to_char[cluster_key]
             else:
                 unmapped_tracks.append((unique_face_id, cluster_id))
 

@@ -451,9 +451,9 @@ def _extract_ground_truth(self) -> Dict[str, Any]:
         main_label, main_modifiers = self._parse_label_with_modifiers(raw_label)
 
         # NEW: Also check for quality field
-        quality_field = cluster_info.get('quality', [])
-        if quality_field:
-            # Quality from annotation JSON (new format)
+        quality_field = cluster_info.get('quality')
+        if quality_field is not None:
+            # Quality from annotation JSON (new format) - takes precedence
             main_quality = set(quality_field)
         else:
             # Legacy: parse from label string
@@ -538,12 +538,12 @@ Existing annotations won't have quality fields. The refinement script should han
 ```python
 # Backward compatible read
 quality_field = cluster_info.get('quality')
-if quality_field is None:
-    # Old format - no quality field
-    quality_set = set()
-else:
-    # New format - quality field present
+if quality_field is not None:
+    # New format - quality field present (empty list means no quality issues)
     quality_set = set(quality_field)
+else:
+    # Old format - no quality field, parse from label string
+    quality_set = main_modifiers
 ```
 
 ### Database Migration

@@ -21,7 +21,7 @@ import networkx as nx
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple, Optional, Any
 
-import constants as constants
+import constants
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +274,10 @@ class ClusterRefiner:
                 face_id = face_data['unique_face_id']
                 track_id = self.extract_track_from_filename(filename)
 
+                # Store face weight based on quality modifiers for main cluster images
+                if main_modifiers & constants.QUALITY_MODIFIERS:
+                    face_weights[face_id] = 0.5
+
                 # Extract scene and track numbers for track-based mapping
                 if track_id:
                     parts = track_id.split('_')
@@ -314,7 +318,7 @@ class ClusterRefiner:
                 track_id = self.extract_track_from_filename(filename)
 
                 # Store face weight based on quality modifiers
-                if outlier_modifiers & constants.QUALITY_MODIFIERS:
+                if outlier_modifiers & self.QUALITY_MODIFIERS:
                     face_weights[face_id] = 0.5
 
                 if track_id:
@@ -607,7 +611,7 @@ class ClusterRefiner:
         base_label, modifiers = self._parse_label_with_modifiers(label)
 
         # Check for quality modifiers
-        if modifiers & constants.QUALITY_MODIFIERS:
+        if modifiers & self.QUALITY_MODIFIERS:
             return 0.5  # Down-weight poor quality faces
 
         return 1.0  # Full weight for normal quality faces
