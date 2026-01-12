@@ -19,7 +19,7 @@ def save2json(data, output_file):
         print(f"Error writing to file {output_file}: {e}")
         sys.exit(1)
 
-def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=True, diverse_frames=True):
+def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=True, diverse_frames=True, top_n=3):
 
     scene_file = os.path.join(scratch_dir, "output", "scene_detection", f"{video_name}.txt")
     face_detection_file = os.path.join(scratch_dir, "output", "face_detection", f"{video_name}.json")
@@ -44,12 +44,19 @@ def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=Tru
         tracker_kwargs['max_gap'] = int(0.5 * fps)
         print(f"Using FPS: {fps:.2f}, setting max_gap={tracker_kwargs['max_gap']} frames (0.5 seconds)")
 
+    # When top_n=1, diversity doesn't apply - always pick the single best frame
+    if top_n == 1:
+        diverse_frames = False
+        print("Selecting 1 best frame per track for clustering (diverse_frames disabled)")
+
     # Initialize the tracker and selector
     face_tracker = FaceTracker(**tracker_kwargs)
-    frame_selector = FrameSelector(video_file=video_file, top_n=3, output_dir=output_dir, diverse_frames=diverse_frames)
+    frame_selector = FrameSelector(video_file=video_file, top_n=top_n, output_dir=output_dir, diverse_frames=diverse_frames)
 
     if diverse_frames:
-        print("Using diversity-aware frame selection (temporal segments for better clustering)")
+        print(f"Using diversity-aware frame selection with top_n={top_n} (temporal segments for better clustering)")
+    else:
+        print(f"Using quality-based frame selection with top_n={top_n} (best frames by quality score)")
 
     # Track faces across scenes
     tracked_faces = face_tracker.track_faces_across_scenes(scene_data, face_data)
@@ -83,6 +90,10 @@ if __name__ == "__main__":
                        help='Disable optimized sequential frame reading (use legacy random-seek method)')
     parser.add_argument('--no-diverse-frames', dest='diverse_frames', action='store_false', default=True,
                        help='Disable diversity-aware frame selection (pick best quality only)')
+    parser.add_argument('--top-n', type=int, default=3,
+                       help='Number of frames to select per track (default: 3). '
+                            'Use 1 for initial clustering to ensure consistent embeddings. '
+                            'Use 3+ with diverse-frames for refinement with pose/lighting variation.')
 
     args = parser.parse_args()
     video_name = args.video_name
@@ -99,4 +110,7 @@ if __name__ == "__main__":
         "use_median_box": args.use_median_box
     }
 
-    main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=not args.no_sequential, diverse_frames=args.diverse_frames)
+    main(video_name, scratch_dir, output_dir, tracker_kwargs,
+         use_sequential=not args.no_sequential,
+         diverse_frames=args.diverse_frames,
+         top_n=args.top_n)
