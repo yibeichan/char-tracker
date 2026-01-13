@@ -277,13 +277,23 @@ class FrameSelector:
         laplacian = cv2.Laplacian(image, cv2.CV_32F)
         return np.var(laplacian)
 
-    def save_cropped_face(self, face_image, unique_face_id, frame_idx):
-        """Save the cropped face image to disk and return the relative path."""
+    def save_cropped_face(self, face_image, scene_id, track_id, frame_idx):
+        """Save the cropped face image to disk and return the relative path.
+
+        Files are organized in scene subdirectories: {output_dir}/{scene_id}/
+        File naming: {scene_id}_track_{track_id}_frame_{frame_idx}.jpg
+        """
         if self.output_dir and self.save_images:
-            save_filename = f"{unique_face_id}_frame_{frame_idx}.jpg"
-            save_path = os.path.join(self.output_dir, save_filename)
+            # Create scene subdirectory
+            scene_dir = os.path.join(self.output_dir, scene_id)
+            os.makedirs(scene_dir, exist_ok=True)
+
+            save_filename = f"{scene_id}_track_{track_id}_frame_{frame_idx}.jpg"
+            save_path = os.path.join(scene_dir, save_filename)
             cv2.imwrite(save_path, face_image)
-            return save_filename 
+            # Return relative path from output_dir: {scene_id}/{filename}
+            return os.path.join(scene_id, save_filename)
+        return None 
 
     def _collect_frame_requirements(self, tracked_data):
         """
@@ -381,8 +391,7 @@ class FrameSelector:
                         continue
 
                     # Save cropped face
-                    unique_face_id = f"{scene_id}_face_{face_id}"
-                    relative_path = self.save_cropped_face(face_image, unique_face_id, target_frame)
+                    relative_path = self.save_cropped_face(face_image, scene_id, face_id, target_frame)
 
                     # Store score
                     key = (scene_id, face_id)
@@ -554,7 +563,7 @@ class FrameSelector:
                             continue
 
                         # Save the image and get its relative path
-                        relative_path = self.save_cropped_face(face_image, f"{scene_id}_face_{face_id}", frame_idx)
+                        relative_path = self.save_cropped_face(face_image, scene_id, face_id, frame_idx)
 
                         frame_scores.append({
                             "frame_idx": frame_idx,
