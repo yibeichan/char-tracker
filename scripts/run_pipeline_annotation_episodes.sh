@@ -167,7 +167,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "SUCCESS: $TASK_ID ready for annotation"
     echo ""
     echo "Next steps:"
-    echo "1. Find cluster images in: \$SCRATCH_DIR/output/cluster_images/$TASK_ID/"
+    echo "1. Find cluster images in: \$SCRATCH_DIR/output/04b_face_tracking_by_cluster/$TASK_ID/"
     echo "2. Create ZIP for ClusterMark upload"
     echo "3. Annotate clusters and export JSON"
     echo "4. Run: python scripts/04c_refine_with_annotations.py $TASK_ID <annotation.json>"
