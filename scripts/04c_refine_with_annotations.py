@@ -261,7 +261,7 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
 
     # Load original clustering data
     clustering_file = os.path.join(
-        scratch_dir, "output", "face_clustering",
+        scratch_dir, "output", "04_face_clustering",
         f"{episode_id}_matched_faces_with_clusters.json"
     )
     logger.info(f"Loading clustering data from: {clustering_file}")
@@ -314,7 +314,7 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
 
     # Save refined clustering
     output_file = os.path.join(
-        scratch_dir, "output", "face_clustering",
+        scratch_dir, "output", "04_face_clustering",
         f"{episode_id}_matched_faces_with_clusters_refined.json"
     )
 
@@ -339,8 +339,8 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
         logger.info("REORGANIZING IMAGES BY REFINED CLUSTER")
         logger.info("=" * 70)
 
-        source_dir = os.path.join(scratch_dir, "output", "face_tracking", episode_id)
-        output_base_dir = os.path.join(scratch_dir, "output", "face_tracking_by_cluster_refined")
+        source_dir = os.path.join(scratch_dir, "output", "03_face_tracking", episode_id)
+        output_base_dir = os.path.join(scratch_dir, "output", "04c_face_tracking_by_cluster_refined")
 
         reorganized_dir = reorganize_by_refined_cluster(
             refined_clustering, episode_id, source_dir, output_base_dir,

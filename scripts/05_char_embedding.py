@@ -211,7 +211,7 @@ if __name__ == "__main__":
     scratch_dir = os.getenv("SCRATCH_DIR")
     output_dir = os.path.join(scratch_dir, "output")
     input_dir = os.path.join(output_dir, "char_face")
-    save_dir = os.path.join(output_dir, "char_ref_embs")
+    save_dir = os.path.join(output_dir, "05_char_ref_embs")
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)

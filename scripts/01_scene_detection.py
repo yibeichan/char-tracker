@@ -29,7 +29,7 @@ if __name__ == "__main__":
     load_dotenv()
     scratch_dir = os.getenv("SCRATCH_DIR")
     input_dir = os.path.join(scratch_dir, "data", "mkv2mp4")
-    output_dir = os.path.join(scratch_dir, "output", "scene_detection")
+    output_dir = os.path.join(scratch_dir, "output", "01_scene_detection")
     os.makedirs(output_dir, exist_ok=True)
 
     main(video_name, detector_type, input_dir, output_dir)

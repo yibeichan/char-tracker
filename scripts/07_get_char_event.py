@@ -18,10 +18,10 @@ def generate_file_path(base_dir, *paths):
 
 def process_episode(episode_id, scratch_dir, save_dir):
     try:
-        tracked_file = generate_file_path(scratch_dir, "output", "face_tracking", episode_id, f"{episode_id}_selected_frames_per_face.json")
-        cluster_file = generate_file_path(scratch_dir, "output", "face_clustering", f"{episode_id}_matched_faces_with_clusters.json")
-        matched_file = generate_file_path(scratch_dir, "output", "cluster_face_matching", f"{episode_id}_cluster-face_matching.json")
-        scene_detect_file = generate_file_path(scratch_dir, "output", "scene_detection", f"{episode_id}.txt")
+        tracked_file = generate_file_path(scratch_dir, "output", "03_face_tracking", episode_id, f"{episode_id}_selected_frames_per_face.json")
+        cluster_file = generate_file_path(scratch_dir, "output", "04_face_clustering", f"{episode_id}_matched_faces_with_clusters.json")
+        matched_file = generate_file_path(scratch_dir, "output", "06_cluster_face_matching", f"{episode_id}_cluster-face_matching.json")
+        scene_detect_file = generate_file_path(scratch_dir, "output", "01_scene_detection", f"{episode_id}.txt")
 
         tracked_face = read_json_file(tracked_file)
         clustered_face = read_json_file(cluster_file)
@@ -77,7 +77,7 @@ def main():
     if not scratch_dir:
         raise EnvironmentError("SCRATCH_DIR environment variable is not set.")
 
-    save_dir = generate_file_path(scratch_dir, "output", "face_event")
+    save_dir = generate_file_path(scratch_dir, "output", "07_face_event")
     os.makedirs(save_dir, exist_ok=True)
 
     # Read episode IDs from the file

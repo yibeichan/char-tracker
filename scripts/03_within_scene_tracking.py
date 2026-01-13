@@ -21,8 +21,8 @@ def save2json(data, output_file):
 
 def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=True, diverse_frames=True, top_n=3):
 
-    scene_file = os.path.join(scratch_dir, "output", "scene_detection", f"{video_name}.txt")
-    face_detection_file = os.path.join(scratch_dir, "output", "face_detection", f"{video_name}.json")
+    scene_file = os.path.join(scratch_dir, "output", "01_scene_detection", f"{video_name}.txt")
+    face_detection_file = os.path.join(scratch_dir, "output", "02_face_detection", f"{video_name}.json")
     video_file = os.path.join(scratch_dir, "data", "mkv2mp4", f"{video_name}.mp4")
 
     scene_data = pd.read_csv(scene_file, sep=",")
@@ -100,7 +100,7 @@ if __name__ == "__main__":
 
     load_dotenv()
     scratch_dir = os.getenv("SCRATCH_DIR")
-    output_dir = os.path.join(scratch_dir, "output", "face_tracking", f"{video_name}")
+    output_dir = os.path.join(scratch_dir, "output", "03_face_tracking", f"{video_name}")
     os.makedirs(output_dir, exist_ok=True)
 
     tracker_kwargs = {

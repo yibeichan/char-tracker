@@ -189,10 +189,10 @@ def create_zip_file(episode_output_dir, video_name):
         return None
 
 def main(video_name, scratch_dir, mode, create_zip):
-    matched_faces_file = os.path.join(scratch_dir, "output", "face_clustering",
+    matched_faces_file = os.path.join(scratch_dir, "output", "04_face_clustering",
                                       f"{video_name}_matched_faces_with_clusters.json")
-    source_dir = os.path.join(scratch_dir, "output", "face_tracking", video_name)
-    output_base_dir = os.path.join(scratch_dir, "output", "face_tracking_by_cluster")
+    source_dir = os.path.join(scratch_dir, "output", "03_face_tracking", video_name)
+    output_base_dir = os.path.join(scratch_dir, "output", "04b_face_tracking_by_cluster")
 
     episode_output_dir = reorganize_by_cluster(video_name, matched_faces_file, source_dir, output_base_dir, mode)
 

@@ -30,7 +30,7 @@ mkdir -p "$ZIP_OUTPUT_DIR"
 echo "=========================================="
 echo "Creating annotation zip files"
 echo "=========================================="
-echo "Source: ${SCRATCH_DIR}/output/face_tracking"
+echo "Source: ${SCRATCH_DIR}/output/03_face_tracking"
 echo "Output: ${ZIP_OUTPUT_DIR}"
 echo "Total episodes: ${#EPISODES[@]}"
 echo "=========================================="
@@ -57,7 +57,7 @@ for episode in "${EPISODES[@]}"; do
         ((SUCCESS_COUNT++))
         
         # Check if zip file was created
-        ZIP_FILE="${SCRATCH_DIR}/output/face_tracking/${episode}/${episode}_annotation.zip"
+        ZIP_FILE="${SCRATCH_DIR}/output/03_face_tracking/${episode}/${episode}_annotation.zip"
         if [ -f "$ZIP_FILE" ]; then
             ZIP_SIZE=$(du -h "$ZIP_FILE" | cut -f1)
             echo "  → Zip file: $ZIP_FILE (${ZIP_SIZE})"
@@ -81,4 +81,4 @@ echo "=========================================="
 # List all created zip files
 echo ""
 echo "Created zip files:"
-find "${SCRATCH_DIR}/output/face_tracking" -name "*_annotation.zip" -type f -exec ls -lh {} \; | tail -n 20
+find "${SCRATCH_DIR}/output/03_face_tracking" -name "*_annotation.zip" -type f -exec ls -lh {} \; | tail -n 20

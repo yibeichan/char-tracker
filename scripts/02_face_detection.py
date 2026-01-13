@@ -42,7 +42,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     input_dir = os.path.join(scratch_dir, "data", "mkv2mp4")
-    output_dir = os.path.join(scratch_dir, "output", "face_detection")
+    output_dir = os.path.join(scratch_dir, "output", "02_face_detection")
     os.makedirs(output_dir, exist_ok=True)  # Ensure the output directory exists
 
     main(video_name, input_dir, output_dir, save_annotated_video=args.save_annotated_video)
