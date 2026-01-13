@@ -95,6 +95,9 @@ USE_SEQUENTIAL="${NO_SEQUENTIAL:-}"
 USE_BATCH="${NO_BATCH:-}"
 SIMILARITY_THRESHOLD="${SIMILARITY_THRESHOLD:-0.5}"
 
+# Output directory name constants (must match src/utils.py)
+OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER="04b_face_tracking_by_cluster"
+
 # Get the episode for this array task
 # Handle both SLURM and local execution
 if [ -n "$SLURM_ARRAY_TASK_ID" ]; then
@@ -167,7 +170,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "SUCCESS: $TASK_ID ready for annotation"
     echo ""
     echo "Next steps:"
-    echo "1. Find cluster images in: \$SCRATCH_DIR/output/04b_face_tracking_by_cluster/$TASK_ID/"
+    echo "1. Find cluster images in: \$SCRATCH_DIR/output/${OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER}/$TASK_ID/"
     echo "2. Create ZIP for ClusterMark upload"
     echo "3. Annotate clusters and export JSON"
     echo "4. Run: python scripts/04c_refine_with_annotations.py $TASK_ID <annotation.json>"

@@ -6,6 +6,10 @@
 # Load environment
 source /orcd/home/002/yibei/char-tracker/.env
 
+# Output directory name constants (must match src/utils.py)
+OUTPUT_DIR_FACE_TRACKING="03_face_tracking"
+OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER="04b_face_tracking_by_cluster"
+
 # Successfully completed episodes
 EPISODES=(
     "friends_s02e02b"
@@ -30,7 +34,7 @@ mkdir -p "$ZIP_OUTPUT_DIR"
 echo "=========================================="
 echo "Creating annotation zip files"
 echo "=========================================="
-echo "Source: ${SCRATCH_DIR}/output/03_face_tracking"
+echo "Source: ${SCRATCH_DIR}/output/${OUTPUT_DIR_FACE_TRACKING}"
 echo "Output: ${ZIP_OUTPUT_DIR}"
 echo "Total episodes: ${#EPISODES[@]}"
 echo "=========================================="
@@ -57,7 +61,7 @@ for episode in "${EPISODES[@]}"; do
         ((SUCCESS_COUNT++))
         
         # Check if zip file was created
-        ZIP_FILE="${SCRATCH_DIR}/output/04b_face_tracking_by_cluster/${episode}.zip"
+        ZIP_FILE="${SCRATCH_DIR}/output/${OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER}/${episode}.zip"
         if [ -f "$ZIP_FILE" ]; then
             ZIP_SIZE=$(du -h "$ZIP_FILE" | cut -f1)
             echo "  → Zip file: $ZIP_FILE (${ZIP_SIZE})"
@@ -81,4 +85,4 @@ echo "=========================================="
 # List all created zip files
 echo ""
 echo "Created zip files:"
-find "${SCRATCH_DIR}/output/04b_face_tracking_by_cluster" -name "*.zip" -type f -exec ls -lh {} \; | tail -n 20
+find "${SCRATCH_DIR}/output/${OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER}" -name "*.zip" -type f -exec ls -lh {} \; | tail -n 20
