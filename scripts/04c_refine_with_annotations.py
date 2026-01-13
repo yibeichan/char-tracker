@@ -261,7 +261,7 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
 
     # Load original clustering data
     clustering_file = os.path.join(
-        scratch_dir, "output", "04_face_clustering",
+        scratch_dir, "output", "04a_face_clustering",
         f"{episode_id}_matched_faces_with_clusters.json"
     )
     logger.info(f"Loading clustering data from: {clustering_file}")
@@ -314,7 +314,7 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
 
     # Save refined clustering
     output_file = os.path.join(
-        scratch_dir, "output", "04_face_clustering",
+        scratch_dir, "output", "04a_face_clustering",
         f"{episode_id}_matched_faces_with_clusters_refined.json"
     )
 

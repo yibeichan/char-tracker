@@ -183,7 +183,7 @@ class ClusterRefiner:
         Build mapping from image_path to face metadata.
 
         Args:
-            clustering_data: Output from 04_face_clustering.py
+            clustering_data: Output from 04a_face_clustering.py
 
         Returns:
             dict: {image_path: {unique_face_id, global_face_id, scene_id, cluster_id, embedding}}

@@ -6,12 +6,11 @@ Shared utilities and constants for the char-tracker pipeline.
 OUTPUT_DIR_SCENE_DETECTION = "01_scene_detection"
 OUTPUT_DIR_FACE_DETECTION = "02_face_detection"
 OUTPUT_DIR_FACE_TRACKING = "03_face_tracking"
-OUTPUT_DIR_FACE_CLUSTERING = "04_face_clustering"
+OUTPUT_DIR_FACE_CLUSTERING = "04a_face_clustering"
 OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER = "04b_face_tracking_by_cluster"
 OUTPUT_DIR_FACE_TRACKING_REFINED = "04c_face_tracking_by_cluster_refined"
-OUTPUT_DIR_CHAR_REF_EMBS = "05_char_ref_embs"
-OUTPUT_DIR_CLUSTER_FACE_MATCHING = "06_cluster_face_matching"
-OUTPUT_DIR_FACE_EVENT = "07_face_event"
+# Stages 05-07 removed (functionality moved to 04c refinement)
+# Stage 08 may be renumbered once harmonization step is defined
 OUTPUT_DIR_CHARACTER_TIMESTAMPS = "08_character_timestamps"
 
 

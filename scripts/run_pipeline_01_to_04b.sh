@@ -161,7 +161,7 @@ FACE_DETECTION_OUTPUT="${SCRATCH_DIR}/output/02_face_detection/${VIDEO_NAME}.jso
 TRACKING_DIR="${SCRATCH_DIR}/output/03_face_tracking/${VIDEO_NAME}"
 TRACKED_FACES="${TRACKING_DIR}/${VIDEO_NAME}_tracked_faces.json"
 SELECTED_FRAMES="${TRACKING_DIR}/${VIDEO_NAME}_selected_frames_per_face.json"
-CLUSTERING_OUTPUT="${SCRATCH_DIR}/output/04_face_clustering/${VIDEO_NAME}_matched_faces_with_clusters.json"
+CLUSTERING_OUTPUT="${SCRATCH_DIR}/output/04a_face_clustering/${VIDEO_NAME}_matched_faces_with_clusters.json"
 REORGANIZE_DIR="${SCRATCH_DIR}/output/04b_face_tracking_by_cluster/${VIDEO_NAME}"
 
 # Check if input video exists
@@ -238,7 +238,7 @@ log_info "=========================================="
 log_info "STEP 04: Face Clustering"
 log_info "=========================================="
 
-cmd_step04=("python" "04_face_clustering.py" "$VIDEO_NAME")
+cmd_step04=("python" "04a_face_clustering.py" "$VIDEO_NAME")
 if [ -n "$NO_BATCH" ]; then
     cmd_step04+=("--no-batch")
 fi

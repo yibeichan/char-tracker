@@ -370,12 +370,12 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     if annotation_file is None:
         # Prefer refined version, fall back to non-refined
         possible_file = os.path.join(
-            scratch_dir, "output", "04_face_clustering",
+            scratch_dir, "output", "04a_face_clustering",
             f"{episode_id}_matched_faces_with_clusters_refined.json"
         )
         if not os.path.exists(possible_file):
             possible_file = os.path.join(
-                scratch_dir, "output", "04_face_clustering",
+                scratch_dir, "output", "04a_face_clustering",
                 f"{episode_id}_matched_faces_with_clusters.json"
             )
 
