@@ -200,8 +200,6 @@ def consolidate_non_faces(refined_clustering, skip_labels):
     Returns:
         Updated refined clustering with consolidated non-face cluster
     """
-    from cluster_refiner import ClusterRefiner
-
     non_face_cluster_id = 'cluster-non-face'
     non_face_faces = []
     non_face_clusters = set()

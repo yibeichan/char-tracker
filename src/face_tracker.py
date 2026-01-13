@@ -282,18 +282,29 @@ class FrameSelector:
 
         Files are organized in scene subdirectories: {output_dir}/{scene_id}/
         File naming: {scene_id}_track_{track_id}_frame_{frame_idx}.jpg
-        """
-        if self.output_dir and self.save_images:
-            # Create scene subdirectory
-            scene_dir = os.path.join(self.output_dir, scene_id)
-            os.makedirs(scene_dir, exist_ok=True)
 
-            save_filename = f"{scene_id}_track_{track_id}_frame_{frame_idx}.jpg"
-            save_path = os.path.join(scene_dir, save_filename)
-            cv2.imwrite(save_path, face_image)
-            # Return relative path from output_dir: {scene_id}/{filename}
-            return os.path.join(scene_id, save_filename)
-        return None 
+        Raises:
+            ValueError: If output_dir is not provided when save_images is True.
+            IOError: If the image write operation fails.
+        """
+        if not self.save_images:
+            return None
+
+        if not self.output_dir:
+            raise ValueError("output_dir must be provided when save_images is True")
+
+        # Create scene subdirectory
+        scene_dir = os.path.join(self.output_dir, scene_id)
+        os.makedirs(scene_dir, exist_ok=True)
+
+        save_filename = f"{scene_id}_track_{track_id}_frame_{frame_idx}.jpg"
+        save_path = os.path.join(scene_dir, save_filename)
+
+        if not cv2.imwrite(save_path, face_image):
+            raise IOError(f"Failed to write image to {save_path}")
+
+        # Return relative path from output_dir: {scene_id}/{filename}
+        return os.path.join(scene_id, save_filename) 
 
     def _collect_frame_requirements(self, tracked_data):
         """

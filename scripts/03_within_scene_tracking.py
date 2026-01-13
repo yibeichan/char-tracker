@@ -45,15 +45,15 @@ def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=Tru
         print(f"Using FPS: {fps:.2f}, setting max_gap={tracker_kwargs['max_gap']} frames (0.5 seconds)")
 
     # When top_n=1, diversity doesn't apply - always pick the single best frame
-    if top_n == 1:
-        diverse_frames = False
-        print("Selecting 1 best frame per track for clustering (diverse_frames disabled)")
+    use_diverse_frames = diverse_frames and top_n > 1
+    if diverse_frames and not use_diverse_frames:
+        print("With top_n=1, diversity is not applicable. Disabling diverse_frames.")
 
     # Initialize the tracker and selector
     face_tracker = FaceTracker(**tracker_kwargs)
-    frame_selector = FrameSelector(video_file=video_file, top_n=top_n, output_dir=output_dir, diverse_frames=diverse_frames)
+    frame_selector = FrameSelector(video_file=video_file, top_n=top_n, output_dir=output_dir, diverse_frames=use_diverse_frames)
 
-    if diverse_frames:
+    if use_diverse_frames:
         print(f"Using diversity-aware frame selection with top_n={top_n} (temporal segments for better clustering)")
     else:
         print(f"Using quality-based frame selection with top_n={top_n} (best frames by quality score)")
