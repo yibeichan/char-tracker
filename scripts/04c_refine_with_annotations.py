@@ -187,6 +187,48 @@ def validate_track_integrity(refined_clustering):
     return {'valid': True, 'violations': [], 'total_tracks': len(track_to_cluster)}
 
 
+def consolidate_non_faces(refined_clustering, skip_labels):
+    """
+    Consolidate all non-face clusters into a single 'cluster-non-face'.
+
+    Non-face labels include: not_human, background, unclear, junk, not face, etc.
+
+    Args:
+        refined_clustering: Refined clustering data
+        skip_labels: List of labels to treat as non-face
+
+    Returns:
+        Updated refined clustering with consolidated non-face cluster
+    """
+    from cluster_refiner import ClusterRefiner
+
+    non_face_cluster_id = 'cluster-non-face'
+    non_face_faces = []
+    non_face_clusters = set()
+
+    # Find all faces in non-face clusters
+    for scene_id, faces in refined_clustering.items():
+        for face_data in faces:
+            cluster_id = face_data.get('cluster_id')
+            if cluster_id and cluster_id.startswith('cluster-'):
+                # Extract label from cluster_id
+                label = cluster_id.replace('cluster-', '')
+                # Check if this is a non-face label
+                if label in skip_labels:
+                    non_face_clusters.add(cluster_id)
+                    non_face_faces.append((scene_id, face_data))
+
+    # Reassign all non-face faces to single cluster
+    for scene_id, face_data in non_face_faces:
+        face_data['cluster_id'] = non_face_cluster_id
+
+    if non_face_clusters:
+        logger.info(f"Consolidated {len(non_face_clusters)} non-face clusters "
+                   f"into {non_face_cluster_id} ({len(non_face_faces)} faces)")
+
+    return refined_clustering
+
+
 def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=False, reorganize_mode='copy',
          config=None):
     """
@@ -251,6 +293,10 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
         logger.error(f"Violations: {track_validation['violations']}")
         raise ValueError("Track integrity violation detected")
     logger.info(f"Track integrity validated for {track_validation['total_tracks']} tracks")
+
+    # Consolidate non-face clusters into single cluster
+    logger.info("Consolidating non-face clusters...")
+    refined_clustering = consolidate_non_faces(refined_clustering, refiner.SKIP_LABELS)
 
     # Extract cluster information from refined clustering
     # Cluster IDs are now strings like "cluster-rachel", "cluster-001", etc.

@@ -149,7 +149,8 @@ class FaceClusterer:
     Uses cosine similarity threshold to build edges between similar face embeddings.
     """
 
-    def __init__(self, similarity_threshold: float = 0.6, max_iterations: int = 100, min_scenes: int = 2):
+    def __init__(self, similarity_threshold: float = 0.6, max_iterations: int = 100,
+                 min_scenes: int = 2, same_scene_different_track_threshold: float = 0.75):
         """
         Initialize FaceClusterer.
 
@@ -159,16 +160,33 @@ class FaceClusterer:
             min_scenes: Minimum unique scenes required for a valid cluster.
                        Clusters with fewer scenes are merged into nearest valid cluster.
                        Set to 1 to disable merging.
+            same_scene_different_track_threshold: Higher threshold for same-scene
+                       different-track pairs (default: 0.75). Prevents false merges
+                       of different characters in the same scene while allowing
+                       merges for same person when tracking breaks (shot-reverse-shot).
         """
         self.similarity_threshold = similarity_threshold
         self.max_iterations = max_iterations
         self.min_scenes = min_scenes
+        self.same_scene_different_track_threshold = same_scene_different_track_threshold
+
+    @staticmethod
+    def _extract_track_from_face_id(unique_face_id: str) -> str:
+        """Extract track number from unique_face_id (e.g., 'scene_001_face_5' -> '5')."""
+        parts = unique_face_id.split('_')
+        if len(parts) >= 4 and parts[2] == 'face':
+            return parts[3]
+        return None
 
     def build_graph(self, face_embeddings):
         """
         Build similarity graph where nodes are embeddings and edges represent similarities.
 
         Uses vectorized cdist for efficient pairwise distance computation.
+
+        Applies higher threshold for same-scene different-track pairs to prevent
+        false merges of different characters while allowing merges for same
+        person when tracking breaks.
         """
         G = nx.Graph()
 
@@ -179,6 +197,20 @@ class FaceClusterer:
             for emb_info in face_data['embeddings']
         ]
 
+        # Filter out NaN embeddings before building graph
+        valid_node_data = []
+        nan_count = 0
+        for i, embedding, face_data, frame_idx, image_path in node_data:
+            if np.any(np.isnan(embedding)):
+                nan_count += 1
+                continue
+            valid_node_data.append((i, embedding, face_data, frame_idx, image_path))
+
+        if nan_count > 0:
+            print(f"Warning: Filtered out {nan_count} embeddings with NaN values")
+
+        node_data = valid_node_data
+
         # Add nodes to the graph
         for i, (face_idx, embedding, face_data, frame_idx, image_path) in enumerate(node_data):
             G.add_node(i, face_idx=face_idx, embedding=embedding, face_data=face_data,
@@ -186,7 +218,7 @@ class FaceClusterer:
 
         # Guard against empty embeddings
         if len(node_data) == 0:
-            print("No face embeddings to cluster. Returning empty graph.")
+            print("No valid face embeddings to cluster. Returning empty graph.")
             return G, node_data
 
         # Vectorized similarity computation using cdist
@@ -197,12 +229,51 @@ class FaceClusterer:
         distances = cdist(embeddings_matrix, embeddings_matrix, 'cosine')
         similarities = 1 - distances
 
-        # Vectorized edge addition: find all pairs above threshold and add in bulk
+        # Edge addition with higher threshold for same-scene different-track pairs
+        # First, get all pairs above the normal threshold
         rows, cols = np.where(np.triu(similarities, k=1) > self.similarity_threshold)
-        edges = [(r, c, similarities[r, c]) for r, c in zip(rows, cols)]
-        G.add_weighted_edges_from(edges)
 
-        print(f"Added {len(edges)} edges based on similarity threshold {self.similarity_threshold}")
+        # Filter edges based on scene/track context
+        filtered_edges = []
+        same_scene_filtered = 0
+        same_scene_passed = 0
+
+        for r, c in zip(rows, cols):
+            node_r = node_data[r]
+            node_c = node_data[c]
+
+            r_scene = node_r[2]['scene_id']
+            c_scene = node_c[2]['scene_id']
+            r_face_id = node_r[2]['unique_face_id']
+            c_face_id = node_c[2]['unique_face_id']
+
+            # Check if same scene, different track
+            if r_scene == c_scene:
+                r_track = self._extract_track_from_face_id(r_face_id)
+                c_track = self._extract_track_from_face_id(c_face_id)
+                if r_track and c_track and r_track != c_track:
+                    # Same scene, different track - require higher threshold
+                    if similarities[r, c] >= self.same_scene_different_track_threshold:
+                        filtered_edges.append((r, c, similarities[r, c]))
+                        same_scene_passed += 1
+                    else:
+                        same_scene_filtered += 1
+                else:
+                    # Same scene, same track (normal case)
+                    filtered_edges.append((r, c, similarities[r, c]))
+            else:
+                # Different scenes (normal case)
+                filtered_edges.append((r, c, similarities[r, c]))
+
+        G.add_weighted_edges_from(filtered_edges)
+
+        if same_scene_filtered > 0:
+            print(f"Filtered {same_scene_filtered} same-scene different-track edges "
+                  f"(below {self.same_scene_different_track_threshold:.2f} threshold)")
+        if same_scene_passed > 0:
+            print(f"Allowed {same_scene_passed} same-scene different-track edges "
+                  f"(above {self.same_scene_different_track_threshold:.2f} threshold)")
+        print(f"Added {len(filtered_edges)} edges total")
 
         return G, node_data
 
