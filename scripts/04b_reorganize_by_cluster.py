@@ -7,6 +7,10 @@ import zipfile
 from collections import defaultdict
 from dotenv import load_dotenv
 
+# Add src directory to path dynamically
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+import utils
+
 def read_json(file_path):
     """Read JSON file."""
     if not os.path.exists(file_path):
@@ -189,10 +193,12 @@ def create_zip_file(episode_output_dir, video_name):
         return None
 
 def main(video_name, scratch_dir, mode, create_zip):
-    matched_faces_file = os.path.join(scratch_dir, "output", "04a_face_clustering",
-                                      f"{video_name}_matched_faces_with_clusters.json")
-    source_dir = os.path.join(scratch_dir, "output", "03_face_tracking", video_name)
-    output_base_dir = os.path.join(scratch_dir, "output", "04b_face_tracking_by_cluster")
+    matched_faces_file = utils.get_output_path(
+        scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING,
+        f"{video_name}_matched_faces_with_clusters.json"
+    )
+    source_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_TRACKING, video_name)
+    output_base_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER)
 
     episode_output_dir = reorganize_by_cluster(video_name, matched_faces_file, source_dir, output_base_dir, mode)
 

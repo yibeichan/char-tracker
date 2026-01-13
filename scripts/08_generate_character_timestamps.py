@@ -28,6 +28,7 @@ import cv2
 
 # Add src directory to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+import utils
 
 # Configure logging
 logging.basicConfig(
@@ -369,13 +370,13 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     # Auto-detect annotation file if not provided
     if annotation_file is None:
         # Prefer refined version, fall back to non-refined
-        possible_file = os.path.join(
-            scratch_dir, "output", "04a_face_clustering",
+        possible_file = utils.get_output_path(
+            scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING,
             f"{episode_id}_matched_faces_with_clusters_refined.json"
         )
         if not os.path.exists(possible_file):
-            possible_file = os.path.join(
-                scratch_dir, "output", "04a_face_clustering",
+            possible_file = utils.get_output_path(
+                scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING,
                 f"{episode_id}_matched_faces_with_clusters.json"
             )
 
@@ -384,7 +385,7 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
                 f"Auto-detection failed. Could not find annotation file for episode {episode_id}. "
                 f"Looked for: {episode_id}_matched_faces_with_clusters_refined.json "
                 f"and {episode_id}_matched_faces_with_clusters.json in "
-                f"{os.path.join(scratch_dir, 'output', '04_face_clustering')}"
+                f"{utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING)}"
             )
 
         annotation_file = possible_file
@@ -405,8 +406,8 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     cluster_to_char = build_cluster_to_character_mapping(annotations)
 
     # Load refined clustering
-    refined_clustering_file = os.path.join(
-        scratch_dir, "output", "face_clustering",
+    refined_clustering_file = utils.get_output_path(
+        scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING,
         f"{episode_id}_matched_faces_with_clusters_refined.json"
     )
     logger.info(f"Loading refined clustering from: {refined_clustering_file}")
@@ -431,8 +432,8 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     track_to_char = build_track_to_character_mapping(refined_clustering, cluster_to_char)
 
     # Load raw tracking data
-    tracking_file = os.path.join(
-        scratch_dir, "output", "03_face_tracking",
+    tracking_file = utils.get_output_path(
+        scratch_dir, utils.OUTPUT_DIR_FACE_TRACKING,
         f"{episode_id}", f"{episode_id}_tracked_faces.json"
     )
     logger.info(f"Loading tracking data from: {tracking_file}")
@@ -456,7 +457,7 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     second_to_chars = smooth_tracks(second_to_chars, fps, max_gap_sec)
 
     # Save results
-    output_dir = os.path.join(scratch_dir, "output", "08_character_timestamps")
+    output_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_CHARACTER_TIMESTAMPS)
     json_path, csv_path = save_timestamps(second_to_chars, output_dir, episode_id)
 
     # Summary statistics

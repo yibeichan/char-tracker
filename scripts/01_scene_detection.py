@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 # Add src directory to path dynamically
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from scene_detector import SceneDetector
+import utils
 
 def main(video_name, detector_type, input_dir, output_dir):
     video_path = os.path.join(input_dir, f"{video_name}.mp4")  # Full path to the video file
@@ -29,7 +30,7 @@ if __name__ == "__main__":
     load_dotenv()
     scratch_dir = os.getenv("SCRATCH_DIR")
     input_dir = os.path.join(scratch_dir, "data", "mkv2mp4")
-    output_dir = os.path.join(scratch_dir, "output", "01_scene_detection")
+    output_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_SCENE_DETECTION)
     os.makedirs(output_dir, exist_ok=True)
 
     main(video_name, detector_type, input_dir, output_dir)

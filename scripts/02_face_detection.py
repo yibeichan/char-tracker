@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 # Add src directory to path dynamically
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from face_detector import FaceDetector
+import utils
 
 def main(video_name, input_dir, output_dir, save_annotated_video=False):
     video_path = os.path.join(input_dir, f"{video_name}.mp4")
@@ -42,7 +43,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     input_dir = os.path.join(scratch_dir, "data", "mkv2mp4")
-    output_dir = os.path.join(scratch_dir, "output", "02_face_detection")
+    output_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_DETECTION)
     os.makedirs(output_dir, exist_ok=True)  # Ensure the output directory exists
 
     main(video_name, input_dir, output_dir, save_annotated_video=args.save_annotated_video)

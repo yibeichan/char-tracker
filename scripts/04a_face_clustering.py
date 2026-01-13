@@ -10,6 +10,7 @@ import json
 # Add src directory to path dynamically
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from face_clusterer import FaceEmbedder, FaceClusterer
+import utils
 
 def match_clusters_with_unique_faces(clustered_faces, unique_faces_per_scene):
     # Build a mapping from unique_face_id to cluster_id
@@ -223,9 +224,11 @@ if __name__ == "__main__":
     load_dotenv()
     scratch_dir = os.getenv("SCRATCH_DIR")
 
-    face_selection_file = os.path.join(scratch_dir, "output", "03_face_tracking",
-                                       f"{video_name}", f"{video_name}_selected_frames_per_face.json")
-    output_dir = os.path.join(scratch_dir, "output", "04_face_clustering")
+    face_selection_file = utils.get_output_path(
+        scratch_dir, utils.OUTPUT_DIR_FACE_TRACKING,
+        f"{video_name}", f"{video_name}_selected_frames_per_face.json"
+    )
+    output_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING)
     os.makedirs(output_dir, exist_ok=True)
 
     main(video_name, face_selection_file, output_dir,

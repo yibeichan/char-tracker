@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from cluster_refiner import ClusterRefiner
+import utils
 
 # Configure logging
 logging.basicConfig(
@@ -260,8 +261,8 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
         )
 
     # Load original clustering data
-    clustering_file = os.path.join(
-        scratch_dir, "output", "04a_face_clustering",
+    clustering_file = utils.get_output_path(
+        scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING,
         f"{episode_id}_matched_faces_with_clusters.json"
     )
     logger.info(f"Loading clustering data from: {clustering_file}")
@@ -313,8 +314,8 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
                         cluster_info[cluster_id] = {'label': name_part, 'cluster_id': cluster_id}
 
     # Save refined clustering
-    output_file = os.path.join(
-        scratch_dir, "output", "04a_face_clustering",
+    output_file = utils.get_output_path(
+        scratch_dir, utils.OUTPUT_DIR_FACE_CLUSTERING,
         f"{episode_id}_matched_faces_with_clusters_refined.json"
     )
 
@@ -339,8 +340,8 @@ def main(episode_id, annotation_file, scratch_dir, dry_run=False, reorganize=Fal
         logger.info("REORGANIZING IMAGES BY REFINED CLUSTER")
         logger.info("=" * 70)
 
-        source_dir = os.path.join(scratch_dir, "output", "03_face_tracking", episode_id)
-        output_base_dir = os.path.join(scratch_dir, "output", "04c_face_tracking_by_cluster_refined")
+        source_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_TRACKING, episode_id)
+        output_base_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_TRACKING_REFINED)
 
         reorganized_dir = reorganize_by_refined_cluster(
             refined_clustering, episode_id, source_dir, output_base_dir,

@@ -2,6 +2,8 @@
 Shared utilities and constants for the char-tracker pipeline.
 """
 
+import os
+
 # Output directory names (numbered by pipeline stage)
 OUTPUT_DIR_SCENE_DETECTION = "01_scene_detection"
 OUTPUT_DIR_FACE_DETECTION = "02_face_detection"
@@ -25,7 +27,3 @@ def get_output_path(scratch_dir, *parts):
         Full path to the output location.
     """
     return os.path.join(scratch_dir, "output", *parts)
-
-
-# Import os for path operations
-import os
