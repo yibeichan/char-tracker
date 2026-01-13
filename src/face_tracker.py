@@ -152,7 +152,6 @@ class FaceTracker:
             min_faces_per_cluster = min(max(n_frames // 2, 15), 30)  # 30 is FPS
 
             face_data_for_scene = []
-            
             for i in range(frame_start, frame_end):
                 faces = face_data[i]["detections"]
                 if len(faces) != 0:
@@ -280,8 +279,23 @@ class FrameSelector:
     def save_cropped_face(self, face_image, scene_id, track_id, frame_idx):
         """Save the cropped face image to disk and return the relative path.
 
+        Args:
+            face_image: Cropped face image (numpy array) to be saved.
+            scene_id (str): Identifier for the current scene.
+            track_id (int): Identifier for the face track within the scene.
+                This is conceptually the same as ``face_id`` used elsewhere;
+                ``track_id`` / ``face_id`` are interchangeable in this context.
+            frame_idx (int): Index of the frame from which the face was cropped.
+
         Files are organized in scene subdirectories: {output_dir}/{scene_id}/
-        File naming: {scene_id}_track_{track_id}_frame_{frame_idx}.jpg
+        File naming convention (uses the historical ``track`` terminology):
+            {scene_id}_track_{track_id}_frame_{frame_idx}.jpg
+
+        Note:
+            Other parts of the codebase may use identifiers like
+            ``scene_1_face_0`` (with ``face`` in the name). Those ``face`` IDs
+            correspond directly to this ``track_id`` parameter; only the naming
+            in the filename uses ``track`` for legacy reasons.
 
         Raises:
             ValueError: If output_dir is not provided when save_images is True.
@@ -304,7 +318,7 @@ class FrameSelector:
             raise IOError(f"Failed to write image to {save_path}")
 
         # Return relative path from output_dir: {scene_id}/{filename}
-        return os.path.join(scene_id, save_filename) 
+        return os.path.join(scene_id, save_filename)
 
     def _collect_frame_requirements(self, tracked_data):
         """

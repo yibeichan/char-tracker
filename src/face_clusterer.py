@@ -173,9 +173,9 @@ class FaceClusterer:
 
     @staticmethod
     def _extract_track_from_face_id(unique_face_id: str) -> str:
-        """Extract track number from unique_face_id (e.g., 'scene_001_face_5' -> '5').
+        """Extract track number from unique_face_id (e.g., 'scene_1_face_5' -> '5').
 
-        Expected format: 'scene_XXX_face_YYYY' where XXX is scene index and YYYY is track/face index.
+        Expected format: 'scene_{N}_face_{M}' where N is scene index and M is track/face index.
 
         Returns:
             Track number as string, or None if format doesn't match.
@@ -184,7 +184,7 @@ class FaceClusterer:
         if len(parts) >= 4 and parts[2] == 'face':
             return parts[3]
         warnings.warn(
-            f"unique_face_id '{unique_face_id}' does not match expected format 'scene_XXX_face_YYYY'. "
+            f"unique_face_id '{unique_face_id}' does not match expected format 'scene_{{N}}_face_{{M}}'. "
             f"Got parts: {parts}"
         )
         return None
