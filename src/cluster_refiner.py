@@ -261,6 +261,15 @@ class ClusterRefiner:
             main_label, main_modifiers = self._parse_label_with_modifiers(raw_label)
             image_count = cluster_info.get('image_count', len(cluster_info.get('image_paths', [])))
 
+            # Check for quality field in cluster annotation (preferred over label parsing)
+            cluster_quality_field = cluster_info.get('quality')
+            if cluster_quality_field is not None:
+                # New format: explicit quality field
+                main_quality = set(cluster_quality_field)
+            else:
+                # Legacy format: use modifiers parsed from label
+                main_quality = main_modifiers
+
             # Check if this is a main character cluster
             is_main_char = main_label in self.MAIN_CHARACTERS
             is_small_cluster = image_count < small_threshold
@@ -278,7 +287,7 @@ class ClusterRefiner:
                 track_id = self.extract_track_from_filename(filename)
 
                 # Store face weight based on quality modifiers for main cluster images
-                if main_modifiers & self.QUALITY_MODIFIERS:
+                if main_quality & self.QUALITY_MODIFIERS:
                     face_weights[face_id] = self.config['quality_modifier_weight']
 
                 # Extract scene and track numbers for track-based mapping
@@ -306,6 +315,15 @@ class ClusterRefiner:
                 raw_label = outlier['label'].lower()
                 outlier_label, outlier_modifiers = self._parse_label_with_modifiers(raw_label)
 
+                # Check for quality field in outlier annotation (preferred over label parsing)
+                outlier_quality_field = outlier.get('quality')
+                if outlier_quality_field is not None:
+                    # New format: explicit quality field
+                    outlier_quality = set(outlier_quality_field)
+                else:
+                    # Legacy format: use modifiers parsed from label
+                    outlier_quality = outlier_modifiers
+
                 if outlier_label in self.SKIP_LABELS:
                     continue
 
@@ -321,8 +339,8 @@ class ClusterRefiner:
                 track_id = self.extract_track_from_filename(filename)
 
                 # Store face weight based on quality modifiers
-                if outlier_modifiers & self.QUALITY_MODIFIERS:
-                    face_weights[face_id] = 0.5
+                if outlier_quality & self.QUALITY_MODIFIERS:
+                    face_weights[face_id] = self.config['quality_modifier_weight']
 
                 if track_id:
                     parts = track_id.split('_')

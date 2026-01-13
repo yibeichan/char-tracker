@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 from dotenv import load_dotenv
+from collections import defaultdict
 import numpy as np
 import pandas as pd
 import json
@@ -80,8 +81,75 @@ def save_json(data, output_file):
         sys.exit(1)
 
 
+def validate_track_integrity(clustering_data):
+    """
+    Check that no track is split across multiple clusters.
+
+    Args:
+        clustering_data: Output from clustering (matched_faces dict)
+
+    Returns:
+        tuple: (is_valid, violations_dict)
+            - is_valid: True if no violations found
+            - violations_dict: dict with track_id -> set of cluster_ids
+    """
+    track_to_clusters = defaultdict(set)
+
+    for scene_id, faces in clustering_data.items():
+        for face_data in faces:
+            unique_face_id = face_data['unique_face_id']
+            cluster_id = face_data.get('cluster_id')
+            if cluster_id is not None:
+                track_to_clusters[unique_face_id].add(cluster_id)
+
+    # Find violations (tracks in multiple clusters)
+    violations = {t: cs for t, cs in track_to_clusters.items() if len(cs) > 1}
+
+    if violations:
+        print(f"Warning: Found {len(violations)} tracks split across clusters")
+        for track, clusters in list(violations.items())[:5]:  # Show first 5
+            print(f"  {track}: {clusters}")
+        if len(violations) > 5:
+            print(f"  ... and {len(violations) - 5} more")
+
+    return len(violations) == 0, violations
+
+
+def log_cluster_statistics(clustering_data):
+    """
+    Log statistics about clusters for quality assessment.
+
+    Args:
+        clustering_data: Output from clustering (matched_faces dict)
+    """
+    cluster_stats = defaultdict(lambda: {
+        'faces': 0,
+        'tracks': set(),
+        'scenes': set()
+    })
+
+    for scene_id, faces in clustering_data.items():
+        for face_data in faces:
+            cluster_id = face_data.get('cluster_id', 'unassigned')
+            cluster_stats[cluster_id]['faces'] += len(face_data.get('image_paths', []))
+            cluster_stats[cluster_id]['tracks'].add(face_data['unique_face_id'])
+            cluster_stats[cluster_id]['scenes'].add(scene_id)
+
+    print(f"\nCluster Statistics: {len(cluster_stats)} clusters")
+
+    # Sort by face count descending
+    sorted_clusters = sorted(cluster_stats.items(),
+                           key=lambda x: x[1]['faces'],
+                           reverse=True)
+
+    for cluster_id, stats in sorted_clusters:
+        print(f"  {cluster_id}: {stats['faces']} faces, "
+              f"{len(stats['tracks'])} tracks, {len(stats['scenes'])} scenes")
+
+
+
 def main(video_name, face_selection_file, output_dir,
-         similarity_threshold=0.6, min_scenes=2):
+         similarity_threshold=0.6, min_scenes=2, same_scene_different_track_threshold=0.75):
     """
     Run face clustering using buffalo_l model.
 
@@ -91,14 +159,18 @@ def main(video_name, face_selection_file, output_dir,
         output_dir: Directory for output files
         similarity_threshold: Cosine similarity threshold for clustering (default: 0.6)
         min_scenes: Minimum scenes required for a valid cluster (default: 2)
+        same_scene_different_track_threshold: Higher threshold for same-scene different-track
+            pairs (default: 0.75). Prevents false merges of different characters in same scene.
     """
     face_embedder = FaceEmbedder()
     face_clusterer = FaceClusterer(
         similarity_threshold=similarity_threshold,
         max_iterations=100,
-        min_scenes=min_scenes
+        min_scenes=min_scenes,
+        same_scene_different_track_threshold=same_scene_different_track_threshold
     )
-    print(f"Clustering with similarity_threshold={similarity_threshold}, min_scenes={min_scenes}")
+    print(f"Clustering with similarity_threshold={similarity_threshold}, "
+          f"min_scenes={min_scenes}, same_scene_different_track_threshold={same_scene_different_track_threshold}")
 
     selected_faces = read_json(face_selection_file)
     image_dir = os.path.dirname(face_selection_file)
@@ -114,9 +186,21 @@ def main(video_name, face_selection_file, output_dir,
     # Match clusters with unique faces
     matched_faces = match_clusters_with_unique_faces(consolidated_clusters, selected_faces)
 
+    # Validate track integrity
+    print("\nValidating track integrity...")
+    is_valid, violations = validate_track_integrity(matched_faces)
+    if is_valid:
+        print("Track integrity validated: no tracks split across clusters")
+    else:
+        print(f"Track integrity: {len(violations)} tracks split across clusters (may be expected with top-n > 1)")
+
+    # Log cluster statistics
+    log_cluster_statistics(matched_faces)
+
     output_file = os.path.join(output_dir, f'{video_name}_matched_faces_with_clusters.json')
     save_json(matched_faces, output_file)
 
+    print(f"\nSaved results to: {output_file}")
     print("Processing complete!")
 
 
@@ -129,6 +213,9 @@ if __name__ == "__main__":
                        help='Minimum scenes required for a valid cluster (default: 2). '
                             'Clusters with fewer scenes are merged into nearest valid cluster. '
                             'Set to 1 to disable cross-scene validation.')
+    parser.add_argument('--same-scene-track-threshold', type=float, default=0.75,
+                       help='Higher similarity threshold for same-scene different-track pairs (default: 0.75). '
+                            'Prevents false merges of different characters in the same scene.')
 
     args = parser.parse_args()
     video_name = args.video_name
@@ -143,4 +230,5 @@ if __name__ == "__main__":
 
     main(video_name, face_selection_file, output_dir,
          similarity_threshold=args.similarity_threshold,
-         min_scenes=args.min_scenes)
+         min_scenes=args.min_scenes,
+         same_scene_different_track_threshold=args.same_scene_track_threshold)
