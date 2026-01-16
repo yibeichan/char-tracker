@@ -161,18 +161,21 @@ def build_track_to_character_mapping(
 def generate_frame_level_presence(
     tracked_faces: dict,
     track_to_char: Dict[str, str]
-) -> Dict[int, Set[str]]:
+) -> Tuple[Dict[int, Set[str]], Dict[int, List[Dict]]]:
     """
-    Generate frame-level character presence from raw tracking data.
+    Generate frame-level character presence and face locations from raw tracking data.
 
     Args:
         tracked_faces: Raw tracking data with all frame observations
         track_to_char: Mapping from track to character
 
     Returns:
-        dict: {frame_idx: set of characters present}
+        tuple: (frame_to_chars, face_locations)
+            - frame_to_chars: {frame_idx: set of characters present}
+            - face_locations: {frame_idx: list of {char, box, conf} dicts}
     """
     frame_to_chars = defaultdict(set)
+    face_locations = defaultdict(list)
 
     for scene_id, tracks in tracked_faces.items():
         for track_idx, track_data in enumerate(tracks):
@@ -190,8 +193,17 @@ def generate_frame_level_presence(
                 frame_idx = observation['frame']
                 frame_to_chars[frame_idx].add(character)
 
+                # Also store face location (coordinates and confidence)
+                face_locations[frame_idx].append({
+                    'char': character,
+                    'box': observation['face'],  # [x1, y1, x2, y2]
+                    'conf': observation['conf']
+                })
+
     logger.info(f"Generated character presence for {len(frame_to_chars)} frames")
-    return frame_to_chars
+    total_faces = sum(len(faces) for faces in face_locations.values())
+    logger.info(f"Generated face locations for {total_faces} face observations")
+    return frame_to_chars, face_locations
 
 
 def convert_to_per_second(
@@ -335,6 +347,42 @@ def save_timestamps(
     return json_path, csv_path
 
 
+def save_face_locations(
+    face_locations: Dict[int, List[Dict]],
+    output_dir: str,
+    episode_id: str
+) -> str:
+    """
+    Save face locations (coordinates) to JSON.
+
+    Args:
+        face_locations: Frame-level face locations {frame_idx: [{char, box, conf}, ...]}
+        output_dir: Output directory
+        episode_id: Episode identifier
+
+    Returns:
+        str: Path to saved JSON file
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    json_data = {
+        'metadata': {
+            'episode_id': episode_id,
+            'main_characters': MAIN_CHARACTERS_LIST,
+            'total_frames': len(face_locations),
+            'total_face_observations': sum(len(faces) for faces in face_locations.values()),
+            'description': 'Frame-level face locations: box = [x1, y1, x2, y2] pixel coordinates'
+        },
+        'face_locations': {str(k): v for k, v in face_locations.items()}
+    }
+
+    json_path = os.path.join(output_dir, f"{episode_id}_face_locations.json")
+    save_json(json_data, json_path)
+    logger.info(f"Saved face locations to: {json_path}")
+
+    return json_path
+
+
 def get_video_fps(video_path: str) -> float:
     """Get FPS from video file."""
     cap = cv2.VideoCapture(video_path)
@@ -444,9 +492,9 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     fps = get_video_fps(video_file)
     logger.info(f"Video FPS: {fps:.2f}")
 
-    # Generate frame-level character presence
-    logger.info("Generating frame-level character presence...")
-    frame_to_chars = generate_frame_level_presence(tracked_faces, track_to_char)
+    # Generate frame-level character presence and face locations
+    logger.info("Generating frame-level character presence and face locations...")
+    frame_to_chars, face_locations = generate_frame_level_presence(tracked_faces, track_to_char)
 
     # Convert to per-second
     logger.info("Converting to per-second presence...")
@@ -459,6 +507,7 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     # Save results
     output_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_CHARACTER_TIMESTAMPS)
     json_path, csv_path = save_timestamps(second_to_chars, output_dir, episode_id)
+    face_locations_path = save_face_locations(face_locations, output_dir, episode_id)
 
     # Summary statistics
     logger.info(f"\n" + "=" * 70)
@@ -482,6 +531,7 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     logger.info(f"\n✓ Timestamps saved:")
     logger.info(f"  JSON: {json_path}")
     logger.info(f"  CSV:  {csv_path}")
+    logger.info(f"  Face locations: {face_locations_path}")
     logger.info("=" * 70)
 
 
