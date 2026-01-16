@@ -33,33 +33,35 @@ class FaceEmbedder:
         Args:
             device: 'cuda' for GPU, 'cpu' for CPU (auto-detected if None)
         """
-        # Determine device
-        if device is None:
-            try:
-                import torch
-                self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            except ImportError:
-                self.device = 'cpu'
-        else:
-            self.device = device
-
         # Import insightface and initialize model
         import insightface
         from insightface.app import FaceAnalysis
 
-        # Determine available providers with graceful fallback
+        # Determine device and available providers
+        # Check onnxruntime CUDA availability first (not torch, since we use onnxruntime)
+        try:
+            import onnxruntime as ort
+            available_providers = ort.get_available_providers()
+            has_cuda = 'CUDAExecutionProvider' in available_providers
+        except ImportError:
+            available_providers = ['CPUExecutionProvider']
+            has_cuda = False
+
+        if device is None:
+            # Auto-detect: use CUDA if onnxruntime-gpu has it available
+            self.device = 'cuda' if has_cuda else 'cpu'
+        else:
+            self.device = device
+
+        # Determine providers based on device
         if self.device == 'cuda':
-            try:
-                import onnxruntime as ort
-                available_providers = ort.get_available_providers()
-                if 'CUDAExecutionProvider' in available_providers:
-                    providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-                else:
-                    print("Warning: CUDA requested but CUDAExecutionProvider not available. "
-                          "Falling back to CPU. Install onnxruntime-gpu for GPU acceleration.")
-                    providers = ['CPUExecutionProvider']
-            except ImportError:
+            if has_cuda:
+                providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+            else:
+                print("Warning: CUDA requested but CUDAExecutionProvider not available. "
+                      "Falling back to CPU. Install onnxruntime-gpu for GPU acceleration.")
                 providers = ['CPUExecutionProvider']
+                self.device = 'cpu'
         else:
             providers = ['CPUExecutionProvider']
 

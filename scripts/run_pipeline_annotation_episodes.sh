@@ -4,7 +4,7 @@
 #SBATCH --output=./logs/%x_%j.out
 #SBATCH --error=./logs/%x_%j.err
 #SBATCH --partition=ou_bcs_low
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --array=23,43,73
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:a100:1
