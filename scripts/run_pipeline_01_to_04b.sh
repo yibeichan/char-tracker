@@ -218,6 +218,9 @@ log_info "STEP 03: Within-Scene Tracking"
 log_info "=========================================="
 
 cmd_step03=("python" "03_within_scene_tracking.py" "$VIDEO_NAME")
+# For initial clustering, use top-n=1 to ensure consistent embeddings within tracks
+cmd_step03+=("--top-n" "1")
+cmd_step03+=("--no-diverse-frames")
 if [ -n "$NO_SEQUENTIAL" ]; then
     cmd_step03+=("--no-sequential")
 fi
