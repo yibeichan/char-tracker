@@ -191,10 +191,14 @@ log_info "=========================================="
 log_info "STEP 01: Scene Detection"
 log_info "=========================================="
 
-python 01_scene_detection.py "$VIDEO_NAME"
-
-# Validate output
-check_file_exists "$SCENE_OUTPUT" "Scene detection output" || exit 1
+if [ -f "$SCENE_OUTPUT" ]; then
+    log_success "Step 01 already complete, skipping..."
+    log_success "Output exists: $SCENE_OUTPUT"
+else
+    python 01_scene_detection.py "$VIDEO_NAME"
+    # Validate output
+    check_file_exists "$SCENE_OUTPUT" "Scene detection output" || exit 1
+fi
 echo ""
 
 # ============================================================================
@@ -204,10 +208,14 @@ log_info "=========================================="
 log_info "STEP 02: Face Detection"
 log_info "=========================================="
 
-python 02_face_detection.py "$VIDEO_NAME"
-
-# Validate output
-check_file_exists "$FACE_DETECTION_OUTPUT" "Face detection output" || exit 1
+if [ -f "$FACE_DETECTION_OUTPUT" ]; then
+    log_success "Step 02 already complete, skipping..."
+    log_success "Output exists: $FACE_DETECTION_OUTPUT"
+else
+    python 02_face_detection.py "$VIDEO_NAME"
+    # Validate output
+    check_file_exists "$FACE_DETECTION_OUTPUT" "Face detection output" || exit 1
+fi
 echo ""
 
 # ============================================================================
@@ -217,27 +225,41 @@ log_info "=========================================="
 log_info "STEP 03: Within-Scene Tracking"
 log_info "=========================================="
 
-cmd_step03=("python" "03_within_scene_tracking.py" "$VIDEO_NAME")
-# For initial clustering, use top-n=1 to ensure consistent embeddings within tracks
-cmd_step03+=("--top-n" "1")
-cmd_step03+=("--no-diverse-frames")
-if [ -n "$NO_SEQUENTIAL" ]; then
-    cmd_step03+=("--no-sequential")
-fi
-"${cmd_step03[@]}"
-
-# Validate outputs
-check_dir_exists "$TRACKING_DIR" "Tracking directory" || exit 1
-check_file_exists "$TRACKED_FACES" "Tracked faces output" || exit 1
-check_file_exists "$SELECTED_FRAMES" "Selected frames output" || exit 1
-
-# Check if any face images were saved
-IMAGE_COUNT=$(find "$TRACKING_DIR" -name "*.jpg" 2>/dev/null | wc -l)
-if [ "$IMAGE_COUNT" -eq 0 ]; then
-    log_warning "No face images found in $TRACKING_DIR"
-    log_warning "This might indicate no faces were tracked in the video"
+# Check if all Step 03 outputs exist
+if [ -d "$TRACKING_DIR" ] && [ -f "$TRACKED_FACES" ] && [ -f "$SELECTED_FRAMES" ]; then
+    log_success "Step 03 already complete, skipping..."
+    log_success "Outputs exist in: $TRACKING_DIR"
+    # Check if any face images were saved
+    IMAGE_COUNT=$(find "$TRACKING_DIR" -name "*.jpg" 2>/dev/null | wc -l)
+    if [ "$IMAGE_COUNT" -eq 0 ]; then
+        log_warning "No face images found in $TRACKING_DIR"
+        log_warning "This might indicate no faces were tracked in the video"
+    else
+        log_success "Found $IMAGE_COUNT face images in tracking directory"
+    fi
 else
-    log_success "Found $IMAGE_COUNT face images in tracking directory"
+    cmd_step03=("python" "03_within_scene_tracking.py" "$VIDEO_NAME")
+    # For initial clustering, use top-n=1 to ensure consistent embeddings within tracks
+    cmd_step03+=("--top-n" "1")
+    cmd_step03+=("--no-diverse-frames")
+    if [ -n "$NO_SEQUENTIAL" ]; then
+        cmd_step03+=("--no-sequential")
+    fi
+    "${cmd_step03[@]}"
+
+    # Validate outputs
+    check_dir_exists "$TRACKING_DIR" "Tracking directory" || exit 1
+    check_file_exists "$TRACKED_FACES" "Tracked faces output" || exit 1
+    check_file_exists "$SELECTED_FRAMES" "Selected frames output" || exit 1
+
+    # Check if any face images were saved
+    IMAGE_COUNT=$(find "$TRACKING_DIR" -name "*.jpg" 2>/dev/null | wc -l)
+    if [ "$IMAGE_COUNT" -eq 0 ]; then
+        log_warning "No face images found in $TRACKING_DIR"
+        log_warning "This might indicate no faces were tracked in the video"
+    else
+        log_success "Found $IMAGE_COUNT face images in tracking directory"
+    fi
 fi
 echo ""
 
@@ -248,15 +270,19 @@ log_info "=========================================="
 log_info "STEP 04: Face Clustering"
 log_info "=========================================="
 
-cmd_step04=("python" "04a_face_clustering.py" "$VIDEO_NAME")
-if [ -n "$NO_BATCH" ]; then
-    cmd_step04+=("--no-batch")
+if [ -f "$CLUSTERING_OUTPUT" ]; then
+    log_success "Step 04 already complete, skipping..."
+    log_success "Output exists: $CLUSTERING_OUTPUT"
+else
+    cmd_step04=("python" "04a_face_clustering.py" "$VIDEO_NAME")
+    if [ -n "$NO_BATCH" ]; then
+        cmd_step04+=("--no-batch")
+    fi
+    cmd_step04+=("--similarity-threshold" "$SIMILARITY_THRESHOLD")
+    "${cmd_step04[@]}"
+    # Validate output
+    check_file_exists "$CLUSTERING_OUTPUT" "Face clustering output" || exit 1
 fi
-cmd_step04+=("--similarity-threshold" "$SIMILARITY_THRESHOLD")
-"${cmd_step04[@]}"
-
-# Validate output
-check_file_exists "$CLUSTERING_OUTPUT" "Face clustering output" || exit 1
 echo ""
 
 # ============================================================================
@@ -266,17 +292,39 @@ log_info "=========================================="
 log_info "STEP 04b: Reorganize by Cluster"
 log_info "=========================================="
 
-python 04b_reorganize_by_cluster.py "$VIDEO_NAME" --mode "$MODE" --create-zip
-
-# Validate output
-check_dir_exists "$REORGANIZE_DIR" "Reorganized cluster directory" || exit 1
-
-# Count cluster directories
-CLUSTER_COUNT=$(find "$REORGANIZE_DIR" -maxdepth 1 -type d -name "*_cluster-*" 2>/dev/null | wc -l)
-if [ "$CLUSTER_COUNT" -eq 0 ]; then
-    log_warning "No cluster directories found in $REORGANIZE_DIR"
+# Check if reorganized directory exists and has cluster subdirectories
+if [ -d "$REORGANIZE_DIR" ]; then
+    CLUSTER_COUNT=$(find "$REORGANIZE_DIR" -maxdepth 1 -type d -name "*_cluster-*" 2>/dev/null | wc -l)
+    ZIP_FILE="${SCRATCH_DIR}/output/${OUTPUT_DIR_FACE_TRACKING_BY_CLUSTER}/${VIDEO_NAME}.zip"
+    if [ "$CLUSTER_COUNT" -gt 0 ] || [ -f "$ZIP_FILE" ]; then
+        log_success "Step 04b already complete, skipping..."
+        log_success "Output directory exists: $REORGANIZE_DIR"
+        if [ "$CLUSTER_COUNT" -gt 0 ]; then
+            log_success "Found $CLUSTER_COUNT cluster directories"
+        fi
+    else
+        python 04b_reorganize_by_cluster.py "$VIDEO_NAME" --mode "$MODE" --create-zip
+        # Validate output
+        check_dir_exists "$REORGANIZE_DIR" "Reorganized cluster directory" || exit 1
+        # Count cluster directories
+        CLUSTER_COUNT=$(find "$REORGANIZE_DIR" -maxdepth 1 -type d -name "*_cluster-*" 2>/dev/null | wc -l)
+        if [ "$CLUSTER_COUNT" -eq 0 ]; then
+            log_warning "No cluster directories found in $REORGANIZE_DIR"
+        else
+            log_success "Found $CLUSTER_COUNT cluster directories"
+        fi
+    fi
 else
-    log_success "Found $CLUSTER_COUNT cluster directories"
+    python 04b_reorganize_by_cluster.py "$VIDEO_NAME" --mode "$MODE" --create-zip
+    # Validate output
+    check_dir_exists "$REORGANIZE_DIR" "Reorganized cluster directory" || exit 1
+    # Count cluster directories
+    CLUSTER_COUNT=$(find "$REORGANIZE_DIR" -maxdepth 1 -type d -name "*_cluster-*" 2>/dev/null | wc -l)
+    if [ "$CLUSTER_COUNT" -eq 0 ]; then
+        log_warning "No cluster directories found in $REORGANIZE_DIR"
+    else
+        log_success "Found $CLUSTER_COUNT cluster directories"
+    fi
 fi
 echo ""
 
