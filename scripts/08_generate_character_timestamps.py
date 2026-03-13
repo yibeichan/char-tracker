@@ -488,7 +488,8 @@ def main(episode_id: str, annotation_file: Optional[str], scratch_dir: str,
     tracked_faces = read_json(tracking_file)
 
     # Get video FPS
-    video_file = os.path.join(scratch_dir, "data", "mkv2mp4", f"{episode_id}.mp4")
+    video_dir = os.getenv("VIDEO_DIR")
+    video_file = utils.get_video_path(video_dir, episode_id)
     fps = get_video_fps(video_file)
     logger.info(f"Video FPS: {fps:.2f}")
 

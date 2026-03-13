@@ -136,6 +136,13 @@ if [ -z "${SCRATCH_DIR:-}" ]; then
     exit 1
 fi
 
+# Get VIDEO_DIR from environment
+if [ -z "${VIDEO_DIR:-}" ]; then
+    log_error "VIDEO_DIR environment variable is not set"
+    exit 1
+fi
+
+log_info "VIDEO_DIR: $VIDEO_DIR"
 log_info "SCRATCH_DIR: $SCRATCH_DIR"
 log_info "Video name: $VIDEO_NAME"
 log_info "Mode for 04b: $MODE"
@@ -153,7 +160,9 @@ fi
 
 # Define paths
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VIDEO_FILE="${SCRATCH_DIR}/data/mkv2mp4/${VIDEO_NAME}.mp4"
+# Resolve video path: VIDEO_DIR/s{season}/{episode_id}.mkv
+SEASON=$(echo "$VIDEO_NAME" | grep -oP '(?<=_s)\d+' | sed 's/^0*//')
+VIDEO_FILE="${VIDEO_DIR}/s${SEASON}/${VIDEO_NAME}.mkv"
 
 # Output directory name constants (must match src/utils.py)
 OUTPUT_DIR_SCENE_DETECTION="01_scene_detection"

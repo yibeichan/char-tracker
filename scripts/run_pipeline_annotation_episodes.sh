@@ -3,7 +3,7 @@
 #SBATCH --job-name=annotation_eps
 #SBATCH --output=./logs/%x_%j.out
 #SBATCH --error=./logs/%x_%j.err
-#SBATCH --partition=ou_bcs_low
+#SBATCH --partition=ou_bcs_normal,pi_satra
 #SBATCH --time=02:00:00
 #SBATCH --array=23,43,73
 #SBATCH --ntasks=1
@@ -108,8 +108,8 @@ if [ -n "$SLURM_ARRAY_TASK_ID" ]; then
         exit 1
     fi
 else
-    # Running locally - require episode ID as argument
-    if [ -z "$1" ]; then
+    # Running locally - accept episode ID or --season flag
+    if [ -z "${1:-}" ]; then
         echo "=========================================="
         echo "ERROR: Not running via SLURM and no episode specified"
         echo ""
@@ -120,11 +120,34 @@ else
         echo "Usage (Local - for testing single episode):"
         echo "  ./scripts/run_pipeline_annotation_episodes.sh friends_s01e03b"
         echo ""
+        echo "Usage (Season batch - prints sbatch command):"
+        echo "  ./scripts/run_pipeline_annotation_episodes.sh --season 1"
+        echo ""
         echo "Available annotation episodes:"
         grep -v "^#" "$REPO_ROOT/data/annotation_episodes.txt" | grep -v "^$"
         echo "=========================================="
         exit 1
     fi
+
+    # Handle --season flag: print sbatch command for all episodes in a season
+    if [ "$1" = "--season" ]; then
+        if [ -z "${2:-}" ]; then
+            echo "ERROR: --season requires a season number (e.g. --season 1)"
+            exit 1
+        fi
+        SEASON_NUM=$(printf "%02d" "$2")
+        LINE_NUMS=$(grep -n "^friends_s${SEASON_NUM}" "$TASK_FILE" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
+        if [ -z "$LINE_NUMS" ]; then
+            echo "ERROR: No episodes found for season $2 (pattern: friends_s${SEASON_NUM})"
+            exit 1
+        fi
+        EPISODE_COUNT=$(echo "$LINE_NUMS" | tr ',' '\n' | wc -l)
+        echo "Season $2: $EPISODE_COUNT episodes"
+        echo ""
+        echo "sbatch --array=$LINE_NUMS scripts/run_pipeline_annotation_episodes.sh"
+        exit 0
+    fi
+
     TASK_ID="$1"
     # Verify episode exists in episode_id.txt
     if ! grep -q "^${TASK_ID}$" "$TASK_FILE"; then

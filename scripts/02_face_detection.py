@@ -8,8 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 's
 from face_detector import FaceDetector
 import utils
 
-def main(video_name, input_dir, output_dir, save_annotated_video=False):
-    video_path = os.path.join(input_dir, f"{video_name}.mp4")
+def main(video_name, video_path, output_dir, save_annotated_video=False):
 
     if not os.path.exists(video_path):  # Check if the video file exists
         print(f"Error: Video file {video_path} does not exist.")
@@ -42,8 +41,9 @@ if __name__ == "__main__":
         print("Error: SCRATCH_DIR environment variable is not set.")
         sys.exit(1)
 
-    input_dir = os.path.join(scratch_dir, "data", "mkv2mp4")
+    video_dir = os.getenv("VIDEO_DIR")
+    video_path = utils.get_video_path(video_dir, video_name)
     output_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_DETECTION)
     os.makedirs(output_dir, exist_ok=True)  # Ensure the output directory exists
 
-    main(video_name, input_dir, output_dir, save_annotated_video=args.save_annotated_video)
+    main(video_name, video_path, output_dir, save_annotated_video=args.save_annotated_video)

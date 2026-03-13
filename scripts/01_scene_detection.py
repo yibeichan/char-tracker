@@ -8,8 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 's
 from scene_detector import SceneDetector
 import utils
 
-def main(video_name, detector_type, input_dir, output_dir):
-    video_path = os.path.join(input_dir, f"{video_name}.mp4")  # Full path to the video file
+def main(video_name, detector_type, video_path, output_dir):
     output_file = os.path.join(output_dir, f"{video_name}.txt")
 
     scene_detector = SceneDetector(video_path, detector_type=detector_type)
@@ -29,8 +28,9 @@ if __name__ == "__main__":
     detector_type = args.detector
     load_dotenv()
     scratch_dir = os.getenv("SCRATCH_DIR")
-    input_dir = os.path.join(scratch_dir, "data", "mkv2mp4")
+    video_dir = os.getenv("VIDEO_DIR")
+    video_path = utils.get_video_path(video_dir, video_name)
     output_dir = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_SCENE_DETECTION)
     os.makedirs(output_dir, exist_ok=True)
 
-    main(video_name, detector_type, input_dir, output_dir)
+    main(video_name, detector_type, video_path, output_dir)

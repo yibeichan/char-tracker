@@ -16,6 +16,23 @@ OUTPUT_DIR_FACE_TRACKING_REFINED = "04c_face_tracking_by_cluster_refined"
 OUTPUT_DIR_CHARACTER_TIMESTAMPS = "08_character_timestamps"
 
 
+def get_video_path(video_dir, episode_id):
+    """Resolve episode_id to video file path.
+
+    Maps episode_id (e.g. 'friends_s01e03b') to the correct season subdir
+    and .mkv file: video_dir/s1/friends_s01e03b.mkv
+
+    Args:
+        video_dir: Root directory containing season subdirs (s1/, s2/, ...).
+        episode_id: Episode identifier (e.g. 'friends_s01e03b').
+
+    Returns:
+        Full path to the .mkv video file.
+    """
+    season = episode_id.split('_s')[1][:2].lstrip('0')
+    return os.path.join(video_dir, f"s{season}", f"{episode_id}.mkv")
+
+
 def get_output_path(scratch_dir, *parts):
     """Construct an output path under scratch_dir/output/.
 

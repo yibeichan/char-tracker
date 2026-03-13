@@ -24,7 +24,8 @@ def main(video_name, scratch_dir, output_dir, tracker_kwargs, use_sequential=Tru
 
     scene_file = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_SCENE_DETECTION, f"{video_name}.txt")
     face_detection_file = utils.get_output_path(scratch_dir, utils.OUTPUT_DIR_FACE_DETECTION, f"{video_name}.json")
-    video_file = os.path.join(scratch_dir, "data", "mkv2mp4", f"{video_name}.mp4")
+    video_dir = os.getenv("VIDEO_DIR")
+    video_file = utils.get_video_path(video_dir, video_name)
 
     scene_data = pd.read_csv(scene_file, sep=",")
     with open(face_detection_file, "r") as f:
